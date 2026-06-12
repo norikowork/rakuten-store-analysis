@@ -191,7 +191,7 @@ const SEED = {
     { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋", itemCode: "shimin2:10000782" },
     { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ", itemCode: "shimin2:10000777" },
     { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
-    { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
+    { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "slife（メグリウム）", shopCode: "aequalis", keyword: "メグリウム", itemCode: "slife:10362528" },
     { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒", itemCode: "jnl:10993203" },
   ],
   logs: {
