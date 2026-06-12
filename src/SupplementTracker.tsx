@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 1商品ぶんの最新値を取得。keyword + shopCode で検索（2026-04-01 API版）。
 async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
-  const params = new URLSearchParams({ format: "json", applicationId: appId, accessKey, hits: "3" });
+  const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, hits: "3" });
   params.set("keyword", product.keyword || product.name);
   if (product.shopCode) params.set("shopCode", product.shopCode);
 
@@ -35,7 +35,8 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   if (json && (json.error || json.errors)) {
     throw new Error(json.error_description || json.errors?.errorMessage || json.error || `HTTP ${res.status}`);
   }
-  const item = json && Array.isArray(json.Items) ? json.Items[0] : null;
+  const raw = json && Array.isArray(json.Items) ? json.Items[0] : null;
+  const item = raw ? (raw.Item || raw) : null;
   if (!item) throw new Error("該当商品が見つかりません");
   const num = (v) => (v == null || v === "" ? null : Number(v));
   return {
