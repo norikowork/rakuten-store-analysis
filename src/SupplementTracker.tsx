@@ -41,6 +41,26 @@ async function fetchRakutenItem(product, appId, accessKey) {
   // 🐛 DEBUG: 生のレスポンス構造を確認
   console.log("🔍 Rakuten API Response:", JSON.stringify(json, null, 2));
   
+  // ステータスチェックと自動リトライ
+  if (res.status !== 200 || !json?.Items?.[0]) {
+    console.warn("🐛 初回呼び出し失敗 status:", res.status, "Items存在:", !!json?.Items?.[0]);
+    console.log("status:", res.status, "body:", await res.clone().text());
+    
+    // 1.5秒待って1回だけ再試行
+    await sleep(1500);
+    const retryRes = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
+    const retryJson = await retryRes.json();
+    console.log("🔄 再試行結果:", retryRes.status, "response:", JSON.stringify(retryJson, null, 2));
+    
+    if (retryRes.status !== 200 || !retryJson?.Items?.[0]) {
+      console.log("status:", retryRes.status, "body:", await retryRes.clone().text());
+      throw new Error(`該当商品が見つかりません（再試行後も失敗）`);
+    }
+    
+    // 再試行成功
+    json = retryJson;
+  }
+  
   if (json && json.error) {
     // shopCode でエラーの場合は keyword のみで再試行
     if (json.error.includes("wrong_parameter") && json.error_description?.includes("shopCode")) {
@@ -157,7 +177,7 @@ const SEED = {
   products: [
     { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール" },
     { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋" },
-    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ" },
+    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクオール パウチ 120粒" },
     { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
     { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
     { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒" },
