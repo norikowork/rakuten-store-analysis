@@ -24,11 +24,10 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   if (product.shopCode) params.set("shopCode", product.shopCode);
 
   const res = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
-  const text = await res.text();              // 本文は1回だけ読む（cloneしない）
+  const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch (e) {}
 
-  // 401/429/5xx やパース失敗は 1.5秒待って1回だけ再試行
   if ((!res.ok || !json) && attempt < 2) {
     await new Promise((r) => setTimeout(r, 1500));
     return fetchRakutenItem(product, appId, accessKey, attempt + 1);
@@ -36,7 +35,7 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   if (json && (json.error || json.errors)) {
     throw new Error(json.error_description || json.errors?.errorMessage || json.error || `HTTP ${res.status}`);
   }
-  const item = json?.Items?.[0] || null;       // 検索APIは Items（大文字）
+  const item = json && Array.isArray(json.Items) ? json.Items[0] : null;
   if (!item) throw new Error("該当商品が見つかりません");
   const num = (v) => (v == null || v === "" ? null : Number(v));
   return {
@@ -44,7 +43,7 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
     price: num(item.itemPrice),
     name: item.itemName,
     url: item.itemUrl,
-    itemCode: item.itemCode,                    // ← 後のランキング照合用
+    itemCode: item.itemCode,
   };
 }
 
