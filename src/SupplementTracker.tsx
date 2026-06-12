@@ -18,58 +18,93 @@ const ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.met
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 1商品ぶんの最新値を取得。keyword + shopCode で検索（2026-04-01 API版）。
-async function fetchRakutenItem(product, appId, accessKey) {
-  // formatVersion=2 を指定して、フラットなレスポンス構造を取得
-  const params = new URLSearchParams({ 
-    format: "json", 
-    formatVersion: "2",  // 新しいレスポンス形式（items[0].itemName）
-    applicationId: appId, 
-    accessKey, 
-    hits: "1" 
-  });
-  
-  // keyword + shopCode で検索（itemCode は廃止）
+async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
+  const params = new URLSearchParams({ format: "json", applicationId: appId, accessKey, hits: "3" });
   params.set("keyword", product.keyword || product.name);
-  if (product.shopCode) {
-    params.set("shopCode", product.shopCode);
-  }
-  
+  if (product.shopCode) params.set("shopCode", product.shopCode);
+
   const res = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
-  let json;
-  try { json = await res.json(); } catch { throw new Error(`HTTP ${res.status}（応答が不正）`); }
+  const text = await res.text();              // 本文は1回だけ読む（cloneしない）
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) {}
+
+  // 401/429/5xx やパース失敗は 1.5秒待って1回だけ再試行
+  if ((!res.ok || !json) && attempt < 2) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return fetchRakutenItem(product, appId, accessKey, attempt + 1);
+  }
+  if (json && (json.error || json.errors)) {
+    throw new Error(json.error_description || json.errors?.errorMessage || json.error || `HTTP ${res.status}`);
+  }
+  const item = json?.Items?.[0] || null;       // 検索APIは Items（大文字）
+  if (!item) throw new Error("該当商品が見つかりません");
+  const num = (v) => (v == null || v === "" ? null : Number(v));
+  return {
+    reviews: num(item.reviewCount),
+    price: num(item.itemPrice),
+    name: item.itemName,
+    url: item.itemUrl,
+    itemCode: item.itemCode,                    // ← 後のランキング照合用
+  };
+}
+
+// 楽天商品ランキングを取得（genreIdベース）
+async function fetchRanking(genreId, appId, accessKey) {
+  const RANKING_BASE = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601";
+  const rankingMap = {}; // { itemCode: rank }
   
-  // 🐛 DEBUG: 生のレスポンス構造を確認
-  console.log("🔍 Rakuten API Response:", JSON.stringify(json, null, 2));
-  
-  if (json && json.error) {
-    // shopCode でエラーの場合は keyword のみで再試行
-    if (json.error.includes("wrong_parameter") && json.error_description?.includes("shopCode")) {
-      console.warn("🐛 shopCode parameter failed, retrying with keyword only");
-      params.delete("shopCode");
-      const retryRes = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
-      json = await retryRes.json();
-      console.log("🔍 Retry Response:", JSON.stringify(json, null, 2));
-    } else {
-      throw new Error(`${json.error}: ${json.error_description || json.message}`);
+  // page 1-4 をページング（1ページ約30件）
+  for (let page = 1; page <= 4; page++) {
+    const params = new URLSearchParams({ 
+      format: "json", 
+      formatVersion: "2",
+      applicationId: appId, 
+      accessKey, 
+      genreId,
+      page: page.toString()
+    });
+    
+    try {
+      const res = await fetch(`${RANKING_BASE}?${params.toString()}`);
+      
+      if (!res.ok) {
+        console.warn(`🐛 ランキングAPI page ${page} 失敗:`, res.status);
+        continue;
+      }
+      
+      const json = await res.json();
+      
+      // エラーチェック
+      if (json.error) {
+        console.warn(`🐛 ランキングAPI page ${page} エラー:`, json.error, json.error_description);
+        continue;
+      }
+      
+      // items配列からitemCodeとrankを抽出
+      if (json.items && Array.isArray(json.items)) {
+        console.log(`🔍 ランキング page ${page}: ${json.items.length}件取得`);
+        
+        for (const item of json.items) {
+          if (item.itemCode && item.rank) {
+            rankingMap[item.itemCode] = item.rank;
+          }
+        }
+      } else {
+        console.warn(`🐛 ランキング page ${page} items配列がありません`);
+      }
+      
+      // 次のページの前に1.5秒待機（レート制限対策）
+      if (page < 4) {
+        await sleep(1500);
+      }
+      
+    } catch (error) {
+      console.warn(`🐛 ランキングAPI page ${page} 例外:`, error.message);
     }
   }
   
-  if (json && json.statusCode && json.statusCode >= 400) throw new Error(json.message || `HTTP ${json.statusCode}`);
-  
-  // formatVersion=2 のレスポンス構造: items[0].itemName
-  const item = json?.items?.[0] || null;
-  if (!item) {
-    console.warn("🐛 Item not found in response. Keys:", Object.keys(json));
-    throw new Error("該当商品が見つかりません");
-  }
-  
-  const num = (v) => (v == null || v === "" ? null : Number(v));
-  return { 
-    reviews: num(item.reviewCount),   // レビュー数
-    price: num(item.itemPrice),      // 価格
-    name: item.itemName,             // 商品名
-    url: item.itemUrl                // 商品URL
-  };
+  console.log(`📊 ランキング取得完了: ${Object.keys(rankingMap).length}件`);
+  return rankingMap;
 }
 
 const EQUOL_COLORS = ["#534AB7", "#7F77DD", "#26215C", "#9F8BEE"];
@@ -157,7 +192,7 @@ const SEED = {
   products: [
     { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール" },
     { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋" },
-    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 120粒" },
+    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクオール パウチ" },
     { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
     { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
     { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒" },
@@ -239,6 +274,46 @@ export default function SupplementTracker() {
   const [saved, setSaved] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newP, setNewP] = useState({ name: "", category: "エクオール", store: "", itemCode: "" });
+
+  // 楽天API取得まわり
+  const [appId, setAppId] = useState("");
+  const [accessKey, setAccessKey] = useState("");
+  const [showApiCfg, setShowApiCfg] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchLog, setFetchLog] = useState(null);
+
+  useEffect(() => {
+    try {
+      setAppId(localStorage.getItem("rk_app_id") || ENV.VITE_RAKUTEN_APP_ID || "");
+      setAccessKey(localStorage.getItem("rk_access_key") || ENV.VITE_RAKUTEN_ACCESS_KEY || "");
+    } catch {}
+  }, []);
+  const saveCreds = (id, key) => {
+    try { localStorage.setItem("rk_app_id", id); localStorage.setItem("rk_access_key", key); } catch {}
+  };
+
+  const fetchFromRakuten = async () => {
+    if (!appId.trim() || !accessKey.trim()) { setShowApiCfg(true); flash("APIキーを設定してください"); return; }
+    setFetching(true); setFetchLog(null);
+    const logs = { ...data.logs };
+    const results = [];
+    for (const p of data.products) {
+      try {
+        const r = await fetchRakutenItem(p, appId.trim(), accessKey.trim());
+        const entry = { reviews: r.reviews, rank: logs[p.id]?.[entryDate]?.rank ?? null, price: r.price };
+        logs[p.id] = { ...(logs[p.id] || {}), [entryDate]: entry };
+        results.push({ name: p.name, ok: true, reviews: r.reviews, price: r.price });
+      } catch (e) {
+        results.push({ name: p.name, ok: false, err: String(e.message || e) });
+      }
+      await sleep(1200); // レート制限（約1req/秒）対策
+    }
+    const okCount = results.filter((r) => r.ok).length;
+    if (okCount > 0) await commit({ ...data, logs }, `楽天から${okCount}件を取得・記録しました`);
+    else flash("取得に失敗しました（下の結果を確認）");
+    setFetchLog(results);
+    setFetching(false);
+  };
 
   const [selectedSite, setSelectedSite] = useState("s1");
   const [newSite, setNewSite] = useState("");
