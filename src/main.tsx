@@ -1,18 +1,41 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import SupplementTracker from "./SupplementTracker";
+import functions from "@/lib/shared/kliv-functions.js";
 
-// このコンポーネントは window.storage 経由で永続化する。通常のブラウザには無いので
-// localStorage で実装したシムを差し込む（kliv.site 上でもデータが保持される）。
+// このコンポーネントは window.storage 経由で永続化する。
+// SQLite データベース経由で保存する（認証済みユーザーのみ利用可能）。
 if (typeof window !== "undefined" && !(window as any).storage) {
   (window as any).storage = {
     async get(key: string) {
-      const value = localStorage.getItem(key);
-      return value == null ? null : { value };
+      try {
+        const result = await functions.get("app-state-api", { key });
+        if (result && result.value) {
+          return { value: result.value };
+        }
+        return null;
+      } catch (error) {
+        console.error("storage.get error:", error);
+        // Fallback to localStorage for development or when API fails
+        const value = localStorage.getItem(key);
+        return value == null ? null : { value };
+      }
     },
     async set(key: string, value: string) {
-      localStorage.setItem(key, value);
-      return true;
+      try {
+        await functions.post("app-state-api", { key, value });
+        return true;
+      } catch (error) {
+        console.error("storage.set error:", error);
+        // Fallback to localStorage for development or when API fails
+        try {
+          localStorage.setItem(key, value);
+          return true;
+        } catch (e) {
+          console.error("localStorage fallback failed:", e);
+          return false;
+        }
+      }
     },
   };
 }
