@@ -10,7 +10,7 @@ const { Provider: AuthSyncProvider, Consumer: AuthSyncConsumer } = React.createC
 // 認証と同期ステータスを管理するコンポーネント
 function AuthSyncManager({ children }) {
   const [user, setUser] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("checking"); // checking, synced, local, error
+  const [syncStatus, setSyncStatus] = useState("local"); // 初期状態はローカルモード（checking→localに変更）
   const [showLogin, setShowLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -27,7 +27,9 @@ function AuthSyncManager({ children }) {
       setUser(currentUser);
       setSyncStatus(currentUser ? "synced" : "local");
     } catch (error) {
-      console.error("Auth check failed:", error);
+      console.error("Auth check failed, using local mode:", error.message);
+      // セッションエラー時はローカルモードで継続
+      setUser(null);
       setSyncStatus("local");
     }
   };
@@ -43,6 +45,7 @@ function AuthSyncManager({ children }) {
       // ログイン成功後にデータ移行を試みる
       await migrateLocalToCloud();
     } catch (error) {
+      console.error("Login error:", error);
       setLoginError(error.message || "ログインに失敗しました");
     }
   };
@@ -60,6 +63,13 @@ function AuthSyncManager({ children }) {
   // localStorageからDBへのデータ移行（初回ログイン時のみ）
   const migrateLocalToCloud = async () => {
     try {
+      // 認証状態チェック
+      const currentUser = await auth.getUser();
+      if (!currentUser) {
+        console.log("未認証状態のため、データ移行をスキップ");
+        return;
+      }
+
       const STORAGE_KEY = "rakuten-supp-tracker-v3";
       const localData = localStorage.getItem(STORAGE_KEY);
       
@@ -67,22 +77,27 @@ function AuthSyncManager({ children }) {
 
       setIsMigrating(true);
       
-      // DBに既存データがあるか確認
-      const existingData = await functions.get("app-state-api", { key: STORAGE_KEY });
-      
-      if (!existingData || !existingData.value) {
-        // DBにデータがない場合のみ移行実行
-        console.log("Migrating local data to cloud...");
-        await functions.post("app-state-api", { 
-          key: STORAGE_KEY, 
-          value: localData 
-        });
-        console.log("Migration completed");
-      } else {
-        console.log("Cloud data exists, skipping migration");
+      try {
+        // DBに既存データがあるか確認
+        const existingData = await functions.get("app-state-api", { key: STORAGE_KEY });
+        
+        if (!existingData || !existingData.value) {
+          // DBにデータがない場合のみ移行実行
+          console.log("Migrating local data to cloud...");
+          await functions.post("app-state-api", { 
+            key: STORAGE_KEY, 
+            value: localData 
+          });
+          console.log("Migration completed");
+        } else {
+          console.log("Cloud data exists, skipping migration");
+        }
+      } catch (migrationError) {
+        console.error("Migration failed:", migrationError);
+        // 移行失敗してもローカルデータは残っているので続行可能
       }
     } catch (error) {
-      console.error("Migration failed:", error);
+      console.error("Migration process failed:", error);
     } finally {
       setIsMigrating(false);
     }
@@ -287,13 +302,19 @@ if (typeof window !== "undefined" && !(window as any).storage) {
         const currentUser = await auth.getUser();
         if (currentUser) {
           // 認証済み：DBから取得
-          const result = await functions.get("app-state-api", { key });
-          if (result && result.value) {
-            console.log("DBからデータを取得:", key);
-            return { value: result.value };
+          try {
+            const result = await functions.get("app-state-api", { key });
+            if (result && result.value) {
+              console.log("DBからデータを取得:", key);
+              return { value: result.value };
+            }
+            console.log("DBにデータがありません:", key);
+            return null;
+          } catch (dbError) {
+            console.warn("DB取得エラー、localStorageにフォールバック:", dbError.message);
+            const value = localStorage.getItem(key);
+            return value == null ? null : { value };
           }
-          console.log("DBにデータがありません:", key);
-          return null;
         } else {
           // 未認証：localStorageから取得
           console.log("localStorageからデータを取得:", key);
@@ -303,8 +324,13 @@ if (typeof window !== "undefined" && !(window as any).storage) {
       } catch (error) {
         console.error("storage.get error:", error);
         // エラー時はlocalStorageにフォールバック
-        const value = localStorage.getItem(key);
-        return value == null ? null : { value };
+        try {
+          const value = localStorage.getItem(key);
+          return value == null ? null : { value };
+        } catch (e) {
+          console.error("localStorage fallback failed:", e);
+          return null;
+        }
       }
     },
     async set(key: string, value: string) {
@@ -312,9 +338,17 @@ if (typeof window !== "undefined" && !(window as any).storage) {
         const currentUser = await auth.getUser();
         if (currentUser) {
           // 認証済み：DBに保存
-          await functions.post("app-state-api", { key, value });
-          console.log("DBにデータを保存:", key);
-          return true;
+          try {
+            await functions.post("app-state-api", { key, value });
+            console.log("DBにデータを保存:", key);
+            return true;
+          } catch (dbError) {
+            console.warn("DB保存エラー、localStorageにフォールバック:", dbError.message);
+            // DB失敗時はlocalStorageに保存
+            localStorage.setItem(key, value);
+            console.log("エラーによりlocalStorageにフォールバック:", key);
+            return true;
+          }
         } else {
           // 未認証：localStorageに保存
           console.log("localStorageにデータを保存:", key);
