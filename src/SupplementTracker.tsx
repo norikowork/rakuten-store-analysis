@@ -157,7 +157,7 @@ const SEED = {
   products: [
     { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール" },
     { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋" },
-    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 120粒" },
+    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ" },
     { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
     { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
     { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒" },
