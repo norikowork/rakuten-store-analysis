@@ -19,18 +19,42 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 1商品ぶんの最新値を取得。itemCode優先、無ければ店舗名+商品名でキーワード検索。
 async function fetchRakutenItem(product, appId, accessKey) {
-  const params = new URLSearchParams({ format: "json", applicationId: appId, accessKey, hits: "1" });
+  // formatVersion=2 を指定して、フラットなレスポンス構造を取得
+  const params = new URLSearchParams({ 
+    format: "json", 
+    formatVersion: "2",  // 新しいレスポンス形式（items[0].itemName）
+    applicationId: appId, 
+    accessKey, 
+    hits: "1" 
+  });
+  
   if (product.itemCode) params.set("itemCode", product.itemCode);
   else params.set("keyword", `${product.store} ${product.name}`.trim());
+  
   const res = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
   let json;
   try { json = await res.json(); } catch { throw new Error(`HTTP ${res.status}（応答が不正）`); }
-  if (json && json.errors) throw new Error(`${json.errors.errorCode}: ${json.errors.errorMessage}`);
+  
+  // 🐛 DEBUG: 生のレスポンス構造を確認
+  console.log("🔍 Rakuten API Response:", JSON.stringify(json, null, 2));
+  
+  if (json && json.error) throw new Error(`${json.error}: ${json.error_description || json.message}`);
   if (json && json.statusCode && json.statusCode >= 400) throw new Error(json.message || `HTTP ${json.statusCode}`);
-  const item = json?.Items?.[0]?.Item || json?.items?.[0]?.Item || json?.items?.[0] || null;
-  if (!item) throw new Error("該当商品が見つかりません");
+  
+  // formatVersion=2 のレスポンス構造: items[0].itemName
+  const item = json?.items?.[0] || null;
+  if (!item) {
+    console.warn("🐛 Item not found in response. Keys:", Object.keys(json));
+    throw new Error("該当商品が見つかりません");
+  }
+  
   const num = (v) => (v == null || v === "" ? null : Number(v));
-  return { reviews: num(item.reviewCount), price: num(item.itemPrice), name: item.itemName, url: item.itemUrl };
+  return { 
+    reviews: num(item.reviewCount),   // レビュー数
+    price: num(item.itemPrice),      // 価格
+    name: item.itemName,             // 商品名
+    url: item.itemUrl                // 商品URL
+  };
 }
 
 const EQUOL_COLORS = ["#534AB7", "#7F77DD", "#26215C", "#9F8BEE"];
