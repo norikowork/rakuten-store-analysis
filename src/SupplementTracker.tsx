@@ -41,6 +41,11 @@ async function fetchRakutenItem(product, appId, accessKey) {
   // 🐛 DEBUG: 生のレスポンス構造を確認
   console.log("🔍 Rakuten API Response:", JSON.stringify(json, null, 2));
   
+  if (json && json.errors) {
+    // errors オブジェクトがある場合（実際のエラーレスポンス構造）
+    throw new Error(`${json.errors.errorCode}: ${json.errors.errorMessage}`);
+  }
+  
   if (json && json.error) {
     // shopCode でエラーの場合は keyword のみで再試行
     if (json.error.includes("wrong_parameter") && json.error_description?.includes("shopCode")) {
@@ -49,6 +54,11 @@ async function fetchRakutenItem(product, appId, accessKey) {
       const retryRes = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
       json = await retryRes.json();
       console.log("🔍 Retry Response:", JSON.stringify(json, null, 2));
+      
+      // 再試行後もエラーの場合
+      if (json.errors) {
+        throw new Error(`${json.errors.errorCode}: ${json.errors.errorMessage}`);
+      }
     } else {
       throw new Error(`${json.error}: ${json.error_description || json.message}`);
     }
