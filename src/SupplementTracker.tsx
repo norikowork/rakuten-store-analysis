@@ -364,94 +364,6 @@ export default function SupplementTracker() {
     const logs = { ...data.logs }; delete logs[id];
     await commit({ ...data, products: data.products.filter((p) => p.id !== id), logs }, "商品を削除しました");
   };
-  // 既存商品をすべて削除して、楽天APIから新規取得
-  const resetAndFetchFromRakuten = async () => {
-    if (!appId.trim() || !accessKey.trim()) { 
-      setShowApiCfg(true); 
-      flash("APIキーを設定してください"); 
-      return; 
-    }
-    
-    if (!confirm("既存の商品データをすべて削除して、楽天APIから新規データを取得します。\nよろしいですか？")) {
-      return;
-    }
-    
-    setFetching(true); setFetchLog(null);
-    
-    try {
-      // 1. 既存商品データを削除
-      const emptyLogs = {};
-      const today = todayStr();
-      
-      // 2. 楽天APIから各商品データを取得
-      const fetchedProducts = [];
-      const fetchResults = [];
-      
-      for (const product of SEED.products) {
-        try {
-          const r = await fetchRakutenItem(product, appId.trim(), accessKey.trim());
-          
-          // 新しい商品IDを生成
-          const newId = "u" + Date.now() + Math.random().toString(36).substr(2, 9);
-          
-          // 取得データを商品として登録
-          const newProduct = {
-            id: newId,
-            name: r.name, // 楽天APIから取得した商品名
-            category: product.category,
-            store: product.store,
-            shopCode: product.shopCode,
-            keyword: product.keyword,
-            url: r.url // 楽天APIから取得した商品URL
-          };
-          
-          fetchedProducts.push(newProduct);
-          
-          // 初期データとして本日のレビュー数・価格を記録
-          emptyLogs[newId] = {
-            [today]: {
-              reviews: r.reviews,
-              rank: null,
-              price: r.price
-            }
-          };
-          
-          fetchResults.push({ 
-            name: r.name, 
-            ok: true, 
-            reviews: r.reviews, 
-            price: r.price 
-          });
-          
-          await sleep(1200); // レート制限対策
-          
-        } catch (e) {
-          fetchResults.push({ 
-            name: product.name, 
-            ok: false, 
-            err: String(e.message || e) 
-          });
-        }
-      }
-      
-      // 3. 新しいデータ構造で保存
-      const next = {
-        products: fetchedProducts,
-        logs: emptyLogs,
-        sites: SEED.sites,
-        backlinks: {},
-        keywords: SEED.keywords
-      };
-      
-      await commit(next, `楽天APIから${fetchedProducts.length}件の商品データを取得しました`);
-      setFetchLog(fetchResults);
-      
-    } catch (error) {
-      flash("データの取得に失敗しました: " + error.message);
-    } finally {
-      setFetching(false);
-    }
-  };
 
   // ---- backlink handlers ----
   const addSite = async () => {
@@ -678,31 +590,6 @@ export default function SupplementTracker() {
                 ))}
               </div>
             )}
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "0.5px dashed rgba(120,120,120,0.3)" }}>
-                <button 
-                  onClick={resetAndFetchFromRakuten} 
-                  disabled={fetching}
-                  style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    gap: 6, 
-                    padding: "8px 16px", 
-                    fontSize: 13, 
-                    background: "none", 
-                    border: "1px solid #A32D2D", 
-                    borderRadius: 8, 
-                    cursor: fetching ? "default" : "pointer", 
-                    color: "#A32D2D",
-                    fontWeight: 500
-                  }}
-                >
-                  <RefreshCw size={14} style={fetching ? { animation: "spin 1s linear infinite" } : undefined} /> 
-                  {fetching ? "再取得中…" : "すべて削除して再取得"}
-                </button>
-                <div style={{ fontSize: 11, color: "#888780", marginTop: 6 }}>
-                  既存の商品データをすべて削除して、楽天APIから最新の商品データを再取得します
-                </div>
-              </div>
           </div>
 
           <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
