@@ -19,10 +19,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 1商品ぶんの最新値を取得。itemCode優先、keyword + shopCode で検索（2026-04-01 API版）。
 async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
-  const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, hits: "3" });
+  const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey });
   if (product.itemCode) {
-    params.set("itemCode", product.itemCode);
+    params.set("itemCode", product.itemCode);        // itemCodeの時は hits を付けない
   } else {
+    params.set("hits", "3");
     params.set("keyword", product.keyword || product.name);
     if (product.shopCode) params.set("shopCode", product.shopCode);
   }
