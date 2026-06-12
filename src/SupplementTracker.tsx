@@ -17,7 +17,7 @@ const RAKUTEN_BASE = (typeof import.meta !== "undefined" && import.meta.env && i
 const ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 1商品ぶんの最新値を取得。itemCode優先、無ければ店舗名+商品名でキーワード検索。
+// 1商品ぶんの最新値を取得。keyword + shopCode で検索（2026-04-01 API版）。
 async function fetchRakutenItem(product, appId, accessKey) {
   // formatVersion=2 を指定して、フラットなレスポンス構造を取得
   const params = new URLSearchParams({ 
@@ -28,8 +28,11 @@ async function fetchRakutenItem(product, appId, accessKey) {
     hits: "1" 
   });
   
-  if (product.itemCode) params.set("itemCode", product.itemCode);
-  else params.set("keyword", `${product.store} ${product.name}`.trim());
+  // keyword + shopCode で検索（itemCode は廃止）
+  params.set("keyword", product.keyword || product.name);
+  if (product.shopCode) {
+    params.set("shopCode", product.shopCode);
+  }
   
   const res = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
   let json;
@@ -38,7 +41,19 @@ async function fetchRakutenItem(product, appId, accessKey) {
   // 🐛 DEBUG: 生のレスポンス構造を確認
   console.log("🔍 Rakuten API Response:", JSON.stringify(json, null, 2));
   
-  if (json && json.error) throw new Error(`${json.error}: ${json.error_description || json.message}`);
+  if (json && json.error) {
+    // shopCode でエラーの場合は keyword のみで再試行
+    if (json.error.includes("wrong_parameter") && json.error_description?.includes("shopCode")) {
+      console.warn("🐛 shopCode parameter failed, retrying with keyword only");
+      params.delete("shopCode");
+      const retryRes = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
+      json = await retryRes.json();
+      console.log("🔍 Retry Response:", JSON.stringify(json, null, 2));
+    } else {
+      throw new Error(`${json.error}: ${json.error_description || json.message}`);
+    }
+  }
+  
   if (json && json.statusCode && json.statusCode >= 400) throw new Error(json.message || `HTTP ${json.statusCode}`);
   
   // formatVersion=2 のレスポンス構造: items[0].itemName
@@ -140,12 +155,12 @@ function todayStrSafe() { return new Date().toISOString().slice(0, 10); }
 
 const SEED = {
   products: [
-    { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", itemCode: "seedcoms:10002553-319-1156478" },
-    { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", itemCode: "" },
-    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", itemCode: "shimin2:4987035545613" },
-    { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", itemCode: "is-near:potassium-supplement" },
-    { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", itemCode: "aequalis:megurium" },
-    { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", itemCode: "life-navi:rbs15502" },
+    { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール" },
+    { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋" },
+    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 120粒" },
+    { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
+    { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
+    { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒" },
   ],
   logs: {
     p1: { [todayStr()]: { reviews: 7206, rank: null, price: 2980 } },
