@@ -17,17 +17,19 @@ const RAKUTEN_BASE = (typeof import.meta !== "undefined" && import.meta.env && i
 const ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 1商品ぶんの最新値を取得。keyword + shopCode で検索（2026-04-01 API版）。
+// 1商品ぶんの最新値を取得。itemCode優先、keyword + shopCode で検索（2026-04-01 API版）。
 async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, hits: "3" });
-  params.set("keyword", product.keyword || product.name);
-  if (product.shopCode) params.set("shopCode", product.shopCode);
-
+  if (product.itemCode) {
+    params.set("itemCode", product.itemCode);
+  } else {
+    params.set("keyword", product.keyword || product.name);
+    if (product.shopCode) params.set("shopCode", product.shopCode);
+  }
   const res = await fetch(`${RAKUTEN_BASE}${RAKUTEN_API_PATH}?${params.toString()}`);
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch (e) {}
-
   if ((!res.ok || !json) && attempt < 2) {
     await new Promise((r) => setTimeout(r, 1500));
     return fetchRakutenItem(product, appId, accessKey, attempt + 1);
@@ -35,17 +37,11 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   if (json && (json.error || json.errors)) {
     throw new Error(json.error_description || json.errors?.errorMessage || json.error || `HTTP ${res.status}`);
   }
-  const raw = json && Array.isArray(json.Items) ? json.Items[0] : null;
+  const raw = json?.Items?.[0];
   const item = raw ? (raw.Item || raw) : null;
   if (!item) throw new Error("該当商品が見つかりません");
   const num = (v) => (v == null || v === "" ? null : Number(v));
-  return {
-    reviews: num(item.reviewCount),
-    price: num(item.itemPrice),
-    name: item.itemName,
-    url: item.itemUrl,
-    itemCode: item.itemCode,
-  };
+  return { reviews: num(item.reviewCount), price: num(item.itemPrice), name: item.itemName, url: item.itemUrl, itemCode: item.itemCode };
 }
 
 // 楽天商品ランキングを取得（genreIdベース）
@@ -190,12 +186,12 @@ function todayStrSafe() { return new Date().toISOString().slice(0, 10); }
 
 const SEED = {
   products: [
-    { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール" },
-    { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋" },
-    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ" },
+    { id: "p1", name: "エクオール 1ヶ月分（10mg）", category: "エクオール", store: "サプリ専門SHOP シードコムス", shopCode: "seedcoms", keyword: "エクオール", itemCode: "seedcoms:10007542" },
+    { id: "p2", name: "大塚製薬 エクエル パウチ 3袋セット", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ 3袋", itemCode: "shimin2:10000782" },
+    { id: "p3", name: "大塚製薬 エクエル パウチ 単品", category: "エクオール", store: "市民薬局 楽天市場店", shopCode: "shimin2", keyword: "エクエル パウチ", itemCode: "shimin2:10000777" },
     { id: "p4", name: "カリウムの力 270粒", category: "カリウム", store: "ウェルモット公式ショップ（旧 TFCO）", shopCode: "is-near", keyword: "カリウムの力 270粒" },
     { id: "p5", name: "メグリウム 塩化カリウム1300mg", category: "カリウム", store: "イコリス オンラインショップ", shopCode: "aequalis", keyword: "メグリウム" },
-    { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒" },
+    { id: "p6", name: "カリウム習慣 300粒", category: "カリウム", store: "ライフナビ（RoyalBS）", shopCode: "life-navi", keyword: "カリウム習慣 300粒", itemCode: "jnl:10993203" },
   ],
   logs: {
     p1: { [todayStr()]: { reviews: 7206, rank: null, price: 2980 } },
