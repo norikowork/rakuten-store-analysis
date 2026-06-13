@@ -292,19 +292,33 @@ export default function SupplementTracker() {
   const fetchFromRakuten = async () => {
     if (!appId.trim() || !accessKey.trim()) { setShowApiCfg(true); flash("APIキーを設定してください"); return; }
     setFetching(true); setFetchLog(null);
+
+    // ① ジャンル別ランキングを取得（itemCode → 順位 のマップ）
+    const GENRE = { "エクオール": "567631", "カリウム": "214787" };
+    const rankingByCat = {};
+    for (const [cat, gid] of Object.entries(GENRE)) {
+      try { rankingByCat[cat] = await fetchRanking(gid, appId.trim(), accessKey.trim()); }
+      catch (e) { rankingByCat[cat] = {}; }
+      await sleep(1500);
+    }
+
+    // ② 各商品を取得し、順位を照合
     const logs = { ...data.logs };
     const results = [];
     for (const p of data.products) {
       try {
         const r = await fetchRakutenItem(p, appId.trim(), accessKey.trim());
-        const entry = { reviews: r.reviews, rank: logs[p.id]?.[entryDate]?.rank ?? null, price: r.price };
+        const rankMap = rankingByCat[p.category] || {};
+        const rank = (r.itemCode && rankMap[r.itemCode] != null) ? rankMap[r.itemCode] : null;
+        const entry = { reviews: r.reviews, rank, price: r.price };
         logs[p.id] = { ...(logs[p.id] || {}), [entryDate]: entry };
-        results.push({ name: p.name, ok: true, reviews: r.reviews, price: r.price });
+        results.push({ name: p.name, ok: true, reviews: r.reviews, price: r.price, rank });
       } catch (e) {
         results.push({ name: p.name, ok: false, err: String(e.message || e) });
       }
-      await sleep(1200); // レート制限（約1req/秒）対策
+      await sleep(1200);
     }
+
     const okCount = results.filter((r) => r.ok).length;
     if (okCount > 0) await commit({ ...data, logs }, `楽天から${okCount}件を取得・記録しました`);
     else flash("取得に失敗しました（下の結果を確認）");
