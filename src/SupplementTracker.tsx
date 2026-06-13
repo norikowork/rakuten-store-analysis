@@ -45,62 +45,22 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   return { reviews: num(item.reviewCount), price: num(item.itemPrice), name: item.itemName, url: item.itemUrl, itemCode: item.itemCode };
 }
 
-// 楽天商品ランキングを取得（genreIdベース）
+// 楽天商品ランキングを取得（genreIdベース、page1のみ）
 async function fetchRanking(genreId, appId, accessKey) {
   const RANKING_BASE = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601";
   const rankingMap = {}; // { itemCode: rank }
-  
-  // page 1-4 をページング（1ページ約30件）
-  for (let page = 1; page <= 4; page++) {
-    const params = new URLSearchParams({ 
-      format: "json", 
-      formatVersion: "2",
-      applicationId: appId, 
-      accessKey, 
-      genreId,
-      page: page.toString()
-    });
-    
-    try {
-      const res = await fetch(`${RANKING_BASE}?${params.toString()}`);
-      
-      if (!res.ok) {
-        console.warn(`🐛 ランキングAPI page ${page} 失敗:`, res.status);
-        continue;
-      }
-      
-      const json = await res.json();
-      
-      // エラーチェック
-      if (json.error) {
-        console.warn(`🐛 ランキングAPI page ${page} エラー:`, json.error, json.error_description);
-        continue;
-      }
-      
-      // items配列からitemCodeとrankを抽出
-      if (json.items && Array.isArray(json.items)) {
-        console.log(`🔍 ランキング page ${page}: ${json.items.length}件取得`);
-        
-        for (const item of json.items) {
-          if (item.itemCode && item.rank) {
-            rankingMap[item.itemCode] = item.rank;
-          }
-        }
-      } else {
-        console.warn(`🐛 ランキング page ${page} items配列がありません`);
-      }
-      
-      // 次のページの前に1.5秒待機（レート制限対策）
-      if (page < 4) {
-        await sleep(1500);
-      }
-      
-    } catch (error) {
-      console.warn(`🐛 ランキングAPI page ${page} 例外:`, error.message);
+  const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, genreId });
+  try {
+    const res = await fetch(`${RANKING_BASE}?${params.toString()}`);
+    if (!res.ok) { console.warn("ランキングAPI失敗:", res.status); return rankingMap; }
+    const json = await res.json();
+    if (json.error) { console.warn("ランキングAPIエラー:", json.error, json.error_description); return rankingMap; }
+    const items = json.Items || json.items || [];   // ← Items（大文字）
+    for (const it of items) {
+      if (it.itemCode && it.rank != null) rankingMap[it.itemCode] = it.rank;
     }
-  }
-  
-  console.log(`📊 ランキング取得完了: ${Object.keys(rankingMap).length}件`);
+    console.log(`📊 ランキング取得: ${Object.keys(rankingMap).length}件 (genre ${genreId})`);
+  } catch (e) { console.warn("ランキング例外:", e.message); }
   return rankingMap;
 }
 
