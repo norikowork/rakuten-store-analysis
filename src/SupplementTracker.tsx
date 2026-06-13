@@ -660,10 +660,10 @@ export default function SupplementTracker() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
                 <thead>
                   <tr style={{ color: "#888780", textAlign: "left" }}>
-                    <th style={{ padding: "6px 8px", fontWeight: 400 }}>商品</th>
-                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 110 }}>レビュー数</th>
-                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 90 }}>順位</th>
-                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 110 }}>価格(円)</th>
+                    <th style={{ padding: "6px 8px", fontWeight: 400, fontSize: 14 }}>商品</th>
+                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 110, fontSize: 14 }}>レビュー数</th>
+                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 90, fontSize: 14 }}>順位</th>
+                    <th style={{ padding: "6px 8px", fontWeight: 400, width: 110, fontSize: 14 }}>価格(円)</th>
                     <th style={{ width: 36 }} />
                   </tr>
                 </thead>
@@ -673,7 +673,7 @@ export default function SupplementTracker() {
                       <td style={{ padding: "8px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                           <span style={{ width: 9, height: 9, borderRadius: 3, background: colorFor(data.products, p.id), flexShrink: 0 }} />
-                          <div><div style={{ lineHeight: 1.3 }}>{p.name}</div><div style={{ fontSize: 11, color: "#888780" }}>{p.store}</div></div>
+                          <div><div style={{ lineHeight: 1.3, fontSize: 14 }}>{p.name}</div><div style={{ fontSize: 11, color: "#888780" }}>{p.store}</div></div>
                         </div>
                       </td>
                       {["reviews", "rank", "price"].map((f) => (
