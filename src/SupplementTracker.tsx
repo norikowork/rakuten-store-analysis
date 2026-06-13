@@ -142,6 +142,18 @@ const KEYWORDS = {
   },
 };
 
+const NG_KEYWORDS = [
+  "症状","吸収","減少","効果","必要","十分な","しっかり","むくみ",
+  "最高純度","最高品質","最高水準","最高","安全","驚きの","最適","ダントツ","強力","理想","特別","贅沢","神サプリ","神","パワー",
+  "アンチエイジング","若返り","若々しさ","女性ホルモン","ホルモンバランス","ゆらぎ","揺らぎ","ダブルケア","年齢とともに変化する女性","年齢にふさわしい美しさ",
+  "輝く","美しさ","美しく","美容成分","美容","美",
+  "シークレット","あなたをサポート",
+];
+function findNgWords(text) {
+  if (!text) return [];
+  return [...new Set(NG_KEYWORDS.filter((w) => text.includes(w)))];
+}
+
 function ymd(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -185,6 +197,7 @@ const SEED = {
   ],
   backlinks: {},
   keywords: KEYWORDS,
+  searchKeywords: [],
 };
 
 const monthKey = (dateStr) => dateStr.slice(0, 7);
@@ -237,6 +250,8 @@ export default function SupplementTracker() {
   const [saved, setSaved] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newP, setNewP] = useState({ name: "", category: "エクオール", store: "", itemCode: "" });
+  const [ngInput, setNgInput] = useState("");
+  const [skInput, setSkInput] = useState("");
 
   // 楽天API取得まわり
   const [appId, setAppId] = useState("");
@@ -306,6 +321,7 @@ export default function SupplementTracker() {
           sites: d.sites || SEED.sites,
           backlinks: d.backlinks || {},
           keywords: d.keywords || SEED.keywords,
+          searchKeywords: d.searchKeywords || [],
         });
       }
       setLoaded(true);
@@ -398,6 +414,24 @@ export default function SupplementTracker() {
   const removeBacklink = async (siteId, blId) => {
     const next = { ...data, backlinks: { ...data.backlinks, [siteId]: (data.backlinks[siteId] || []).filter((b) => b.id !== blId) } };
     await commit(next, "被リンクを削除しました");
+  };
+
+  const importSearchKeywords = async () => {
+    const lines = skInput.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    const parsed = lines.map((l) => {
+      const m = l.split(/[,\t]/);
+      const word = (m[0] || "").trim();
+      const vol = m[1] != null ? Number(String(m[1]).replace(/[^0-9]/g, "")) : NaN;
+      return word ? { word, volume: Number.isFinite(vol) ? vol : null } : null;
+    }).filter(Boolean);
+    const map = new Map((data.searchKeywords || []).map((k) => [k.word, k]));
+    parsed.forEach((k) => map.set(k.word, k));
+    const next = [...map.values()].sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    await commit({ ...data, searchKeywords: next }, `${parsed.length}件のキーワードを取り込みました`);
+    setSkInput("");
+  };
+  const clearSearchKeywords = async () => {
+    await commit({ ...data, searchKeywords: [] }, "検索キーワードをクリアしました");
   };
 
   const exportJson = () => {
@@ -772,6 +806,110 @@ export default function SupplementTracker() {
 
       {mode === "keywords" && data.keywords && (
         <>
+          {/* NGキーワードチェックカード */}
+          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertCircle size={16} style={{ color: "#D85A30" }} />
+              NGキーワードチェック（薬機法・誇大表現）
+            </div>
+            <textarea 
+              value={ngInput} 
+              onChange={(e) => setNgInput(e.target.value)}
+              placeholder="商品タイトルを貼り付けてチェック…" 
+              style={{ 
+                width: "100%", 
+                minHeight: 80, 
+                padding: "10px 12px", 
+                fontSize: 13, 
+                border: "0.5px solid rgba(120,120,120,0.3)", 
+                borderRadius: 8, 
+                resize: "vertical",
+                fontFamily: "inherit"
+              }}
+            />
+            {ngInput && (
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                {(() => {
+                  const found = findNgWords(ngInput);
+                  if (found.length > 0) {
+                    return (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#FBEBEB", borderRadius: 8, border: "0.5px solid #FCC" }}>
+                          <AlertCircle size={14} style={{ color: "#A32D2D" }} />
+                          <span style={{ fontSize: 13, color: "#A32D2D", fontWeight: 500 }}>⚠️ NGワードが{found.length}件見つかりました</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          </div>
+
+          {/* 検索キーワード（手動インポート） */}
+          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              <Tags size={16} style={{ color: "#0F6E56" }} />
+              検索キーワード（手動インポート）
+            </div>
+            <div style={{ fontSize: 12, color: "#5F5E5A", marginBottom: 10, lineHeight: 1.6 }}>
+              ラッコキーワード等で調べた語を貼り付け。1行1語。『語,検索数』の形式なら検索数も取り込めます
+            </div>
+            <textarea 
+              value={skInput} 
+              onChange={(e) => setSkInput(e.target.value)}
+              placeholder="エクオール おすすめ&#10;エクオール 比較,1200&#10;エクオール 効果,800"
+              style={{ 
+                width: "100%", 
+                minHeight: 80, 
+                padding: "10px 12px", 
+                fontSize: 13, 
+                border: "0.5px solid rgba(120,120,120,0.3)", 
+                borderRadius: 8, 
+                resize: "vertical",
+                fontFamily: "inherit",
+                marginBottom: 10
+              }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={importSearchKeywords} disabled={!skInput.trim()} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#fff", background: skInput.trim() ? "#0F6E56" : "#BDBDB8", border: "none", borderRadius: 6, cursor: skInput.trim() ? "pointer" : "default" }}>インポート</button>
+              <button onClick={clearSearchKeywords} disabled={!data.searchKeywords?.length} style={{ padding: "8px 16px", fontSize: 13, color: "#444441", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: data.searchKeywords?.length ? "pointer" : "default" }}>全消去</button>
+            </div>
+            {data.searchKeywords && data.searchKeywords.length > 0 && (
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+                {data.searchKeywords.map((k) => {
+                  const ng = findNgWords(k.word);
+                  return (
+                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#F7F6F2", borderRadius: 6, border: "0.5px solid rgba(120,120,120,0.15)" }}>
+                      <span style={{ flex: 1, fontSize: 12.5, color: "#444441" }}>{k.word}</span>
+                      {k.volume && (
+                        <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#E1F5EE", color: "#0F6E56", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
+                      )}
+                      {ng.length > 0 && (
+                        <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                          {found.map((w) => (
+                            <span key={w} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ {w}</span>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  } else {
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#E9F6F1", borderRadius: 8, border: "0.5px solid #1D9E75" }}>
+                        <Check size={14} style={{ color: "#0F6E56" }} />
+                        <span style={{ fontSize: 13, color: "#0F6E56", fontWeight: 500 }}>✅ NGワードは見つかりませんでした</span>
+                      </div>
+                    );
+                  }
+                })()}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
             <p style={{ fontSize: 13, color: "#5F5E5A", margin: 0, maxWidth: 620, lineHeight: 1.6 }}>
               楽天の検索上位・ランキング掲載の<strong>実在する上位商品タイトル</strong>から、各カテゴリで繰り返し使われている語を抽出しました。
@@ -806,10 +944,14 @@ export default function SupplementTracker() {
                   <div>
                     {terms.map((t) => {
                       const ty = KW_TYPES[t.type] || { color: "#888780", bg: "#EFEDE8" };
+                      const ng = findNgWords(t.word);
                       return (
                         <div key={t.word} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: "0.5px solid rgba(120,120,120,0.12)" }}>
                           <span style={{ fontSize: 10.5, padding: "2px 6px", borderRadius: 5, background: ty.bg, color: ty.color, flexShrink: 0, width: 48, textAlign: "center" }}>{t.type}</span>
                           <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.3, minWidth: 0 }}>{t.word}</span>
+                          {ng.length > 0 && (
+                            <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500, flexShrink: 0 }}>⚠️ NG</span>
+                          )}
                           <div style={{ width: 70, height: 7, borderRadius: 4, background: "#F1EFEA", flexShrink: 0, overflow: "hidden" }}>
                             <div style={{ width: `${(t.count / maxCount) * 100}%`, height: "100%", borderRadius: 4, background: ty.color }} />
                           </div>
