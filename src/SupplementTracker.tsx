@@ -3,7 +3,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
-  Plus, Trash2, Download, Upload, Save, TrendingUp, Check, AlertCircle, Pencil, Link2, ExternalLink, Tags, RefreshCw, Settings, X,
+  Plus, Trash2, Download, Upload, Save, TrendingUp, Check, AlertCircle, Pencil, Link2, ExternalLink, Tags, RefreshCw, Settings, X, Search,
 } from "lucide-react";
 
 const STORAGE_KEY = "rakuten-supp-tracker-v3";
@@ -433,6 +433,9 @@ export default function SupplementTracker() {
   const clearSearchKeywords = async () => {
     await commit({ ...data, searchKeywords: [] }, "検索キーワードをクリアしました");
   };
+  const removeSearchKeyword = async (word) => {
+    await commit({ ...data, searchKeywords: (data.searchKeywords || []).filter((k) => k.word !== word) }, "削除しました");
+  };
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -458,7 +461,7 @@ export default function SupplementTracker() {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      try { const p = JSON.parse(reader.result); if (p.products) await commit({ products: p.products, logs: p.logs || {}, sites: p.sites || SEED.sites, backlinks: p.backlinks || {}, keywords: p.keywords || SEED.keywords }, "読み込みました"); }
+      try { const p = JSON.parse(reader.result); if (p.products) await commit({ products: p.products, logs: p.logs || {}, sites: p.sites || SEED.sites, backlinks: p.backlinks || {}, keywords: p.keywords || SEED.keywords, searchKeywords: p.searchKeywords || [] }, "読み込みました"); }
       catch (err) { flash("読み込みに失敗しました"); }
     };
     reader.readAsText(file); e.target.value = "";
@@ -530,6 +533,7 @@ export default function SupplementTracker() {
         <button onClick={() => setMode("tracker")} style={{ ...tab(mode === "tracker"), display: "flex", alignItems: "center", gap: 6 }}><TrendingUp size={15} /> 販売トラッカー</button>
         <button onClick={() => setMode("backlinks")} style={{ ...tab(mode === "backlinks", "#0F6E56", "#E1F5EE", "#085041"), display: "flex", alignItems: "center", gap: 6 }}><Link2 size={15} /> 被リンク管理</button>
         <button onClick={() => setMode("keywords")} style={{ ...tab(mode === "keywords", "#C2541F", "#FBEBDF", "#8A3A14"), display: "flex", alignItems: "center", gap: 6 }}><Tags size={15} /> キーワード分析</button>
+        <button onClick={() => setMode("searchkw")} style={{ ...tab(mode === "searchkw", "#185FA5", "#E2EEFA", "#0E3F6E"), display: "flex", alignItems: "center", gap: 6 }}><Search size={15} /> 検索キーワード</button>
       </div>
 
       {mode === "tracker" && (
@@ -973,6 +977,77 @@ export default function SupplementTracker() {
               <AlertCircle size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} />
               {data.keywords.meta.note}（抽出日: {data.keywords.meta.sampledAt}）
             </p>
+          )}
+        </>
+      )}
+
+      {mode === "searchkw" && (
+        <>
+          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <Search size={18} style={{ color: "#185FA5" }} />
+              検索キーワード（ラッコキーワード等から手動インポート）
+            </div>
+            <div style={{ fontSize: 13, color: "#5F5E5A", marginBottom: 12, lineHeight: 1.6 }}>
+              ラッコキーワード等で調べた語を貼り付けて取り込みます。1行1語。『語,検索数』で検索数も取り込めます
+            </div>
+            <textarea 
+              value={skInput} 
+              onChange={(e) => setSkInput(e.target.value)}
+              placeholder="エクオール おすすめ&#10;エクオール 比較,1200&#10;エクオール 効果,800"
+              rows={6}
+              style={{ 
+                width: "100%", 
+                padding: "12px", 
+                fontSize: 13, 
+                border: "0.5px solid rgba(120,120,120,0.3)", 
+                borderRadius: 8, 
+                resize: "vertical",
+                fontFamily: "inherit",
+                marginBottom: 12
+              }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={importSearchKeywords} disabled={!skInput.trim()} style={{ padding: "10px 18px", fontSize: 14, fontWeight: 500, color: "#fff", background: skInput.trim() ? "#185FA5" : "#BDBDB8", border: "none", borderRadius: 8, cursor: skInput.trim() ? "pointer" : "default" }}>インポート</button>
+            </div>
+          </div>
+
+          {data.searchKeywords && data.searchKeywords.length > 0 ? (
+            <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+              <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 12 }}>
+                取り込み済みキーワード（{data.searchKeywords.length}件）
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+                {data.searchKeywords.map((k) => {
+                  const ng = findNgWords(k.word);
+                  return (
+                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#F7F6F2", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.15)" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, color: "#444441", fontWeight: 500, marginBottom: 4 }}>{k.word}</div>
+                        {k.volume && (
+                          <div style={{ fontSize: 12, color: "#5F5E5A" }}>検索数: {k.volume.toLocaleString()}</div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {k.volume && (
+                          <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, background: "#E2EEFA", color: "#185FA5", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
+                        )}
+                        {ng.length > 0 && (
+                          <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
+                        )}
+                        <button onClick={() => removeSearchKeyword(k.word)} style={{ padding: "6px 10px", fontSize: 12, background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: "pointer", color: "#A32D2D" }}><Trash2 size={12} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: "#fff", border, borderRadius: 12, padding: 40, marginBottom: 18, textAlign: "center", color: "#888780" }}>
+              <Search size={32} style={{ marginBottom: 12, color: "#BDBDB8" }} />
+              <div style={{ fontSize: 14 }}>まだ取り込まれていません。</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>上に貼り付けてインポートしてください</div>
+            </div>
           )}
         </>
       )}
