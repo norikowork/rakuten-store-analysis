@@ -443,10 +443,13 @@ export default function SupplementTracker() {
   const exportKeywordsCsv = () => {
     const rows = [["カテゴリ", "キーワード候補", "上位タイトル出現数", "サンプル商品数", "分類"]];
     Object.entries(data.keywords || {}).filter(([k]) => k !== "meta").forEach(([cat, cd]) => {
-      (cd.terms || []).forEach((t) => rows.push([cat, t.word, t.count, cd.sample, t.type]));
+      (cd.terms || []).forEach((t) => {
+        const word = findNgWords(t.word).length > 0 ? `（NG用語）${t.word}` : t.word;
+        rows.push([cat, word, t.count, cd.sample, t.type]);
+      });
     });
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `rakuten-keywords-${todayStr()}.csv`; a.click();
     URL.revokeObjectURL(url);
