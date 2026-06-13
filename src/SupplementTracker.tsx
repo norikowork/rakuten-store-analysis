@@ -418,16 +418,22 @@ export default function SupplementTracker() {
 
   const importSearchKeywords = async () => {
     const lines = skInput.split(/\n/).map((l) => l.trim()).filter(Boolean);
-    const parsed = lines.map((l) => {
+    const map = new Map((data.searchKeywords || []).map((k) => [k.word, { ...k }]));
+    for (const l of lines) {
       const m = l.split(/[,\t]/);
       const word = (m[0] || "").trim();
+      if (!word) continue;
       const vol = m[1] != null ? Number(String(m[1]).replace(/[^0-9]/g, "")) : NaN;
-      return word ? { word, volume: Number.isFinite(vol) ? vol : null } : null;
-    }).filter(Boolean);
-    const map = new Map((data.searchKeywords || []).map((k) => [k.word, k]));
-    parsed.forEach((k) => map.set(k.word, k));
-    const next = [...map.values()].sort((a, b) => (b.volume || 0) - (a.volume || 0));
-    await commit({ ...data, searchKeywords: next }, `${parsed.length}件のキーワードを取り込みました`);
+      const ex = map.get(word);
+      if (ex) {
+        ex.count = (ex.count || 1) + 1;
+        if (Number.isFinite(vol)) ex.volume = vol;
+      } else {
+        map.set(word, { word, count: 1, volume: Number.isFinite(vol) ? vol : null });
+      }
+    }
+    const next = [...map.values()].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.volume || 0) - (a.volume || 0));
+    await commit({ ...data, searchKeywords: next }, `${lines.length}語をインポートしました`);
     setSkInput("");
   };
   const clearSearchKeywords = async () => {
@@ -1015,28 +1021,29 @@ export default function SupplementTracker() {
           {data.searchKeywords && data.searchKeywords.length > 0 ? (
             <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
               <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 12 }}>
-                取り込み済みキーワード（{data.searchKeywords.length}件）
+                おすすめキーワードランキング（インポート回数順）
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-                {data.searchKeywords.map((k) => {
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {data.searchKeywords.map((k, idx) => {
                   const ng = findNgWords(k.word);
                   return (
-                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#F7F6F2", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.15)" }}>
+                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px", background: "#F7F6F2", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.15)" }}>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: "#185FA5", width: 28, textAlign: "center", flexShrink: 0 }}>{idx + 1}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, color: "#444441", fontWeight: 500, marginBottom: 4 }}>{k.word}</div>
-                        {k.volume && (
-                          <div style={{ fontSize: 12, color: "#5F5E5A" }}>検索数: {k.volume.toLocaleString()}</div>
-                        )}
+                        <div style={{ fontSize: 15, color: "#444441", fontWeight: 500, marginBottom: 4 }}>{k.word}</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {k.count && (
+                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E2EEFA", color: "#185FA5", fontWeight: 500 }}>×{k.count} 回</span>
+                          )}
+                          {k.volume && (
+                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E1F5EE", color: "#0F6E56", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
+                          )}
+                          {ng.length > 0 && (
+                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {k.volume && (
-                          <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, background: "#E2EEFA", color: "#185FA5", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
-                        )}
-                        {ng.length > 0 && (
-                          <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
-                        )}
-                        <button onClick={() => removeSearchKeyword(k.word)} style={{ padding: "6px 10px", fontSize: 12, background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: "pointer", color: "#A32D2D" }}><Trash2 size={12} /></button>
-                      </div>
+                      <button onClick={() => removeSearchKeyword(k.word)} style={{ padding: "8px 12px", fontSize: 13, background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: "pointer", color: "#A32D2D" }}><Trash2 size={13} /></button>
                     </div>
                   );
                 })}
