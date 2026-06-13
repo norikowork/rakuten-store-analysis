@@ -2,17 +2,137 @@ import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import SupplementTracker from "./SupplementTracker";
 
+// 認証SDKの動的インポート
+let auth: any = null;
+
 // UIコンポーネント
-const RecoveryButton = ({ onRecover, hasLocalData }: { onRecover: () => void; hasLocalData: boolean }) => {
-  if (!hasLocalData) return null;
+const AuthStatusBar = ({ user, onLogin, onLogout, syncStatus }: {
+  user: any;
+  onLogin: () => void;
+  onLogout: () => void;
+  syncStatus: "cloud" | "local";
+}) => {
   return (
     <div style={{
-      position: "fixed", top: 12, right: 12,
-      padding: "10px 14px", background: "#A32D2D", color: "#fff",
-      borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer",
-      zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
-    }} onClick={onRecover}>
-      このブラウザのデータをDBに保存（復旧）
+      position: "fixed", top: 0, left: 0, right: 0,
+      padding: "10px 18px",
+      background: syncStatus === "cloud" ? "#E9F6F1" : "#FFF4E5",
+      borderBottom: "0.5px solid rgba(120,120,120,0.15)",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      fontSize: 13, zIndex: 1000
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%",
+          background: syncStatus === "cloud" ? "#0F6E56" : "#F5A623"
+        }} />
+        <span style={{ fontWeight: 500 }}>
+          {syncStatus === "cloud" ? "クラウド同期中" : "ローカルのみ保存"}
+        </span>
+        {user && (
+          <span style={{ color: "#888780", marginLeft: 4, fontSize: 12 }}>
+            ({user.email})
+          </span>
+        )}
+      </div>
+      <div>
+        {user ? (
+          <button onClick={onLogout} style={{
+            padding: "6px 12px", fontSize: 12,
+            background: "none", border: "0.5px solid rgba(120,120,120,0.3)",
+            borderRadius: 6, cursor: "pointer", color: "#444441"
+          }}>
+            ログアウト
+          </button>
+        ) : (
+          <button onClick={onLogin} style={{
+            padding: "6px 12px", fontSize: 12,
+            background: "#0F6E56", color: "#fff",
+            border: "none", borderRadius: 6, cursor: "pointer"
+          }}>
+            ログイン
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const LoginModal = ({ onClose, onLogin }: { onClose: () => void; onLogin: (email: string, password: string) => void }) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError("メールとパスワードを入力してください");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await onLogin(email, password);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "ログインに失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.5)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 2000
+    }}>
+      <div style={{
+        background: "#fff", padding: 24, borderRadius: 12,
+        width: "100%", maxWidth: 400, boxShadow: "0 4px 20px rgba(0,0,0,0.15)"
+      }}>
+        <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 600 }}>ログイン</h2>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4, fontWeight: 500 }}>メール</label>
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              style={{ width: "100%", padding: 10, fontSize: 14, border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6 }}
+            />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4, fontWeight: 500 }}>パスワード</label>
+            <input
+              type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              style={{ width: "100%", padding: 10, fontSize: 14, border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6 }}
+            />
+          </div>
+          {error && (
+            <div style={{ padding: "8px 12px", background: "#FBEBEB", color: "#A32D2D", borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" onClick={onClose} style={{
+              padding: "8px 16px", fontSize: 13,
+              background: "none", border: "0.5px solid rgba(120,120,120,0.3)",
+              borderRadius: 6, cursor: "pointer", color: "#444441"
+            }}>
+              キャンセル
+            </button>
+            <button type="submit" disabled={loading} style={{
+              padding: "8px 16px", fontSize: 13,
+              background: "#0F6E56", color: "#fff",
+              border: "none", borderRadius: 6, cursor: loading ? "default" : "pointer"
+            }}>
+              {loading ? "ログイン中..." : "ログイン"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
@@ -20,50 +140,52 @@ const RecoveryButton = ({ onRecover, hasLocalData }: { onRecover: () => void; ha
 function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showRecovery, setShowRecovery] = useState(false);
-  const [hasLocalData, setHasLocalData] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<"cloud" | "local">("local");
+  const [showLogin, setShowLogin] = useState(false);
 
-  // 認証状態をチェック
+  // 認証SDKを動的ロード
   useEffect(() => {
-    checkAuth();
+    (async () => {
+      try {
+        const authModule = await import("./lib/shared/kliv-auth.js");
+        auth = authModule.default;
+        await checkAuth();
+      } catch (e) {
+        console.error("認証SDKロードエラー:", e);
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const checkAuth = async () => {
     try {
       console.log("認証チェック開始");
-      const res = await fetch("/api/v2/auth/user");
-      console.log("認証レスポンス:", res.status);
-      if (res.ok) {
-        const data = await res.json();
-        const u = data.user;
-        console.log("ユーザー認証成功:", u);
+      const u = await auth.getUser();
+      console.log("認証チェック結果:", u);
+      if (u) {
         setUser(u);
-        // ログイン済みならlocalStorageのデータチェック
-        const localData = localStorage.getItem("rakuten-supp-tracker-v3");
-        console.log("localStorageデータ:", localData ? "あり" : "なし");
-        setHasLocalData(!!localData);
-        
+        setSyncStatus("cloud");
         // DBにデータがあるかチェック
         const dbRes = await fetch("/api/state?key=rakuten-supp-tracker-v3");
-        console.log("DBレスポンス:", dbRes.status);
+        console.log("DBデータチェック:", dbRes.status);
         if (dbRes.ok) {
           const dbData = await dbRes.json();
           console.log("DBデータ:", dbData);
           // DBにデータがない && localStorageにあるなら自動移行
+          const localData = localStorage.getItem("rakuten-supp-tracker-v3");
           if (!dbData.value && localData) {
             console.log("自動移行開始: localStorage -> DB");
             await migrateToDB(localData);
           }
         }
-        setShowRecovery(true);
       } else {
-        console.log("ユーザー未認証");
         setUser(null);
+        setSyncStatus("local");
       }
     } catch (e) {
       console.error("認証チェックエラー:", e);
-      setAuthError("認証エラーが発生しました");
+      setUser(null);
+      setSyncStatus("local");
     } finally {
       setLoading(false);
     }
@@ -89,62 +211,82 @@ function App() {
     }
   };
 
-  const handleRecovery = async () => {
-    const localData = localStorage.getItem("rakuten-supp-tracker-v3");
-    if (!localData) {
-      alert("復旧するデータがありません");
-      return;
-    }
-
-    if (!confirm("このブラウザのデータをDBに上書き保存します。よろしいですか？")) {
-      return;
-    }
-
-    const success = await migrateToDB(localData);
-    if (success) {
-      alert("復旧完了！ページをリロードします");
-      window.location.reload();
-    } else {
-      alert("復旧に失敗しました");
+  const handleLogin = async (email: string, password: string) => {
+    console.log("ログイン開始:", email);
+    try {
+      await auth.signIn(email, password);
+      console.log("サインイン成功");
+      const u = await auth.getUser();
+      console.log("ユーザー取得:", u);
+      setUser(u);
+      setSyncStatus("cloud");
+      
+      // ログイン後、データ移行チェック
+      const dbRes = await fetch("/api/state?key=rakuten-supp-tracker-v3");
+      console.log("ログイン後DBチェック:", dbRes.status);
+      if (dbRes.ok) {
+        const dbData = await dbRes.json();
+        console.log("ログイン後DBデータ:", dbData);
+        const localData = localStorage.getItem("rakuten-supp-tracker-v3");
+        if (!dbData.value && localData) {
+          console.log("ログイン後自動移行開始");
+          await migrateToDB(localData);
+        }
+      }
+    } catch (e) {
+      console.error("ログインエラー:", e);
+      throw e;
     }
   };
 
-  // DBラッパー
+  const handleLogout = async () => {
+    await auth.signOut();
+    setUser(null);
+    setSyncStatus("local");
+  };
+
+  // DBラッパー（ログイン時=DB、未ログイン・エラー時=localStorage）
   if (typeof window !== "undefined") {
     (window as any).storage = {
       async get(key: string) {
-        try {
-          const res = await fetch(`/api/state?key=${key}`);
-          if (res.ok) {
-            const data = await res.json();
-            return data;
-          } else {
-            // DB失敗時はlocalStorageフォールバック
+        if (user) {
+          try {
+            const res = await fetch(`/api/state?key=${key}`);
+            if (res.ok) {
+              const data = await res.json();
+              return data;
+            } else {
+              throw new Error(`DB取得失敗: ${res.status}`);
+            }
+          } catch (e) {
+            console.warn("DB取得エラー、localStorageフォールバック:", e);
             const v = localStorage.getItem(key);
             return v == null ? null : { value: v };
           }
-        } catch (e) {
-          console.error("DB取得エラー、localStorageフォールバック:", e);
+        } else {
           const v = localStorage.getItem(key);
           return v == null ? null : { value: v };
         }
       },
       async set(key: string, value: string) {
-        try {
-          const res = await fetch("/api/state", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ key, value })
-          });
-          if (res.ok) {
-            return true;
-          } else {
-            // DB失敗時はlocalStorageフォールバック
+        if (user) {
+          try {
+            const res = await fetch("/api/state", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ key, value })
+            });
+            if (res.ok) {
+              return true;
+            } else {
+              throw new Error(`DB保存失敗: ${res.status}`);
+            }
+          } catch (e) {
+            console.warn("DB保存エラー、localStorageフォールバック:", e);
             localStorage.setItem(key, value);
             return true;
           }
-        } catch (e) {
-          console.error("DB保存エラー、localStorageフォールバック:", e);
+        } else {
           localStorage.setItem(key, value);
           return true;
         }
@@ -165,8 +307,21 @@ function App() {
 
   return (
     <>
-      {showRecovery && user && <RecoveryButton onRecover={handleRecovery} hasLocalData={hasLocalData} />}
-      <SupplementTracker />
+      <AuthStatusBar
+        user={user}
+        onLogin={() => setShowLogin(true)}
+        onLogout={handleLogout}
+        syncStatus={syncStatus}
+      />
+      {showLogin && (
+        <LoginModal
+          onClose={() => setShowLogin(false)}
+          onLogin={handleLogin}
+        />
+      )}
+      <div style={{ paddingTop: 50 }}>
+        <SupplementTracker />
+      </div>
     </>
   );
 }
