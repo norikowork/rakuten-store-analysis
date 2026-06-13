@@ -252,6 +252,8 @@ export default function SupplementTracker() {
   const [newP, setNewP] = useState({ name: "", category: "エクオール", store: "", itemCode: "" });
   const [ngInput, setNgInput] = useState("");
   const [skInput, setSkInput] = useState("");
+  const [skPage, setSkPage] = useState(1);
+  const SK_PER_PAGE = 100;
 
   // 楽天API取得まわり
   const [appId, setAppId] = useState("");
@@ -435,6 +437,7 @@ export default function SupplementTracker() {
     const next = [...map.values()].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.volume || 0) - (a.volume || 0));
     await commit({ ...data, searchKeywords: next }, `${lines.length}語をインポートしました`);
     setSkInput("");
+    setSkPage(1);
   };
   const clearSearchKeywords = async () => {
     await commit({ ...data, searchKeywords: [] }, "検索キーワードをクリアしました");
@@ -1023,31 +1026,48 @@ export default function SupplementTracker() {
               <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 12 }}>
                 おすすめキーワードランキング（インポート回数順）
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {data.searchKeywords.map((k, idx) => {
-                  const ng = findNgWords(k.word);
-                  return (
-                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px", background: "#F7F6F2", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.15)" }}>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: "#185FA5", width: 28, textAlign: "center", flexShrink: 0 }}>{idx + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 15, color: "#444441", fontWeight: 500, marginBottom: 4 }}>{k.word}</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {k.count && (
-                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E2EEFA", color: "#185FA5", fontWeight: 500 }}>×{k.count} 回</span>
-                          )}
-                          {k.volume && (
-                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E1F5EE", color: "#0F6E56", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
-                          )}
-                          {ng.length > 0 && (
-                            <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
-                          )}
-                        </div>
-                      </div>
-                      <button onClick={() => removeSearchKeyword(k.word)} style={{ padding: "8px 12px", fontSize: 13, background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: "pointer", color: "#A32D2D" }}><Trash2 size={13} /></button>
+              {(() => {
+                const skAll = data.searchKeywords || [];
+                const skTotalPages = Math.max(1, Math.ceil(skAll.length / SK_PER_PAGE));
+                const skPageSafe = Math.min(skPage, skTotalPages);
+                const skShown = skAll.slice((skPageSafe - 1) * SK_PER_PAGE, skPageSafe * SK_PER_PAGE);
+                return (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {skShown.map((k, i) => {
+                        const ng = findNgWords(k.word);
+                        return (
+                          <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px", background: "#F7F6F2", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.15)" }}>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: "#185FA5", width: 28, textAlign: "center", flexShrink: 0 }}>{(skPageSafe - 1) * SK_PER_PAGE + i + 1}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 15, color: "#444441", fontWeight: 500, marginBottom: 4 }}>{k.word}</div>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                {k.count && (
+                                  <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E2EEFA", color: "#185FA5", fontWeight: 500 }}>×{k.count} 回</span>
+                                )}
+                                {k.volume && (
+                                  <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#E1F5EE", color: "#0F6E56", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
+                                )}
+                                {ng.length > 0 && (
+                                  <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
+                                )}
+                              </div>
+                            </div>
+                            <button onClick={() => removeSearchKeyword(k.word)} style={{ padding: "8px 12px", fontSize: 13, background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: "pointer", color: "#A32D2D" }}><Trash2 size={13} /></button>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                    {skTotalPages > 1 && (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 12 }}>
+                        <button disabled={skPageSafe <= 1} onClick={() => setSkPage(skPageSafe - 1)} style={{ padding: "6px 14px", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.3)", background: skPageSafe <= 1 ? "#F1EFEA" : "#fff", cursor: skPageSafe <= 1 ? "default" : "pointer" }}>← 前へ</button>
+                        <span style={{ fontSize: 13, color: "#5F5E5A" }}>{skPageSafe} / {skTotalPages} ページ（全{skAll.length}件）</span>
+                        <button disabled={skPageSafe >= skTotalPages} onClick={() => setSkPage(skPageSafe + 1)} style={{ padding: "6px 14px", borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.3)", background: skPageSafe >= skTotalPages ? "#F1EFEA" : "#fff", cursor: skPageSafe >= skTotalPages ? "default" : "pointer" }}>次へ →</button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ background: "#fff", border, borderRadius: 12, padding: 40, marginBottom: 18, textAlign: "center", color: "#888780" }}>
