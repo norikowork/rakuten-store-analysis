@@ -1023,7 +1023,7 @@ export default function SupplementTracker() {
 
           {data.searchKeywords && data.searchKeywords.length > 0 ? (
             <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
-              <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>
                 おすすめキーワードランキング（インポート回数順）
               </div>
               {(() => {
