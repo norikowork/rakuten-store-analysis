@@ -3,7 +3,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
-  Plus, Trash2, Download, Upload, Save, TrendingUp, Check, AlertCircle, Pencil, Link2, ExternalLink, Tags, RefreshCw, Settings, X, Search,
+  Plus, Trash2, Download, Upload, Save, TrendingUp, Check, AlertCircle, Pencil, Link2, ExternalLink, Tags, RefreshCw, Settings, X, Search, Trophy,
 } from "lucide-react";
 
 const STORAGE_KEY = "rakuten-supp-tracker-v3";
@@ -198,6 +198,7 @@ const SEED = {
   backlinks: {},
   keywords: KEYWORDS,
   searchKeywords: { "エクオール": [], "カリウム": [] },
+  bestsellers: { "エクオール": { history: {} }, "カリウム": { history: {} } },
 };
 
 const monthKey = (dateStr) => dateStr.slice(0, 7);
@@ -253,6 +254,7 @@ export default function SupplementTracker() {
   const [skInput, setSkInput] = useState("");
   const [skCat, setSkCat] = useState("エクオール");
   const [skPage, setSkPage] = useState(1);
+  const [bsCat, setBsCat] = useState("エクオール");
   const SK_PER_PAGE = 100;
 
   // 楽天API取得まわり
@@ -324,6 +326,7 @@ export default function SupplementTracker() {
           backlinks: d.backlinks || {},
           keywords: d.keywords || SEED.keywords,
           searchKeywords: (d.searchKeywords && !Array.isArray(d.searchKeywords)) ? d.searchKeywords : { "エクオール": [], "カリウム": [] },
+          bestsellers: d.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } },
         });
       }
       setLoaded(true);
@@ -447,6 +450,38 @@ export default function SupplementTracker() {
     const cur = (data.searchKeywords?.[skCat] || []).filter((k) => k.word !== word);
     await commit({ ...data, searchKeywords: { ...(data.searchKeywords || {}), [skCat]: cur } }, "削除しました");
   };
+  // ---- 売れ筋ランキング ----
+  const fetchBestsellers = async (genreId, appId, accessKey) => {
+    const R = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601";
+    const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, genreId });
+    const res = await fetch(`${R}?${params.toString()}`);
+    const json = await res.json();
+    const items = json.Items || json.items || [];
+    return items.slice(0, 15).map((it) => ({
+      rank: it.rank, itemCode: it.itemCode, name: it.itemName, shop: it.shopName,
+      reviews: it.reviewCount, reviewAvg: it.reviewAverage, price: it.itemPrice, url: it.itemUrl,
+    }));
+  };
+  const fetchBestsellersAll = async () => {
+    if (!appId.trim() || !accessKey.trim()) { setShowApiCfg(true); flash("APIキーを設定してください"); return; }
+    setFetching(true);
+    const GENRE = { "エクオール": "567631", "カリウム": "214787" };
+    const today = todayStr();
+    const next = { ...(data.bestsellers || {}) };
+    for (const [cat, gid] of Object.entries(GENRE)) {
+      try {
+        const top15 = await fetchBestsellers(gid, appId.trim(), accessKey.trim());
+        const cur = next[cat] || { history: {} };
+        next[cat] = { ...cur, history: { ...cur.history, [today]: top15 } };
+      } catch (e) {
+        console.error(`売れ筋取得エラー(${cat}):`, e);
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await commit({ ...data, bestsellers: next }, "売れ筋ランキングを記録しました");
+    setFetching(false);
+  };
+
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -472,7 +507,7 @@ export default function SupplementTracker() {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      try { const p = JSON.parse(reader.result); if (p.products) await commit({ products: p.products, logs: p.logs || {}, sites: p.sites || SEED.sites, backlinks: p.backlinks || {}, keywords: p.keywords || SEED.keywords, searchKeywords: p.searchKeywords || [] }, "読み込みました"); }
+      try { const p = JSON.parse(reader.result); if (p.products) await commit({ products: p.products, logs: p.logs || {}, sites: p.sites || SEED.sites, backlinks: p.backlinks || {}, keywords: p.keywords || SEED.keywords, searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } }, "読み込みしました"); }
       catch (err) { flash("読み込みに失敗しました"); }
     };
     reader.readAsText(file); e.target.value = "";
@@ -548,6 +583,7 @@ export default function SupplementTracker() {
         <button onClick={() => setMode("backlinks")} style={{ ...tab(mode === "backlinks", "#0F6E56", "#E1F5EE", "#085041"), display: "flex", alignItems: "center", gap: 6 }}><Link2 size={15} /> 被リンク管理</button>
         <button onClick={() => setMode("keywords")} style={{ ...tab(mode === "keywords", "#C2541F", "#FBEBDF", "#8A3A14"), display: "flex", alignItems: "center", gap: 6 }}><Tags size={15} /> キーワード分析</button>
         <button onClick={() => setMode("searchkw")} style={{ ...tab(mode === "searchkw", "#185FA5", "#E2EEFA", "#0E3F6E"), display: "flex", alignItems: "center", gap: 6 }}><Search size={15} /> 検索キーワード</button>
+        <button onClick={() => setMode("bestsellers")} style={{ ...tab(mode === "bestsellers", "#7955D4", "#F3E5FF", "#4B2482"), display: "flex", alignItems: "center", gap: 6 }}><Trophy size={15} /> 売れ筋ランキング</button>
       </div>
 
       {mode === "tracker" && (
@@ -997,6 +1033,88 @@ export default function SupplementTracker() {
               {data.keywords.meta.note}（抽出日: {data.keywords.meta.sampledAt}）
             </p>
           )}
+        </>
+      )}
+
+      {mode === "bestsellers" && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {["エクオール", "カリウム"].map((c) => (
+                <button key={c} onClick={() => setBsCat(c)} style={{ ...tab(bsCat === c, "#7955D4", "#F3E5FF", "#4B2482") }}>{c}</button>
+              ))}
+            </div>
+            <div style={{ marginLeft: "auto" }}>
+              <button onClick={fetchBestsellersAll} disabled={fetching} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 14, fontWeight: 500, color: "#fff", background: "#7955D4", border: "none", borderRadius: 8, cursor: fetching ? "default" : "pointer" }}>
+                <Trophy size={15} /> {fetching ? "取得中..." : "売れ筋を取得して記録"}
+              </button>
+            </div>
+          </div>
+
+          {(() => {
+            const bs = data.bestsellers?.[bsCat];
+            const dates = Object.keys(bs?.history || {}).sort();
+            const latest = dates.length ? bs.history[dates[dates.length - 1]] : [];
+            const countOf = (code) => dates.filter((d) => (bs.history[d] || []).some((x) => x.itemCode === code)).length;
+
+            return (
+              <div style={{ background: "#fff", border, borderRadius: 12, padding: "16px 12px 8px", marginBottom: 22 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px 8px", fontSize: 13, color: "#5F5E5A", marginBottom: 12 }}>
+                  <Trophy size={15} /> {bsCat} 売れ筋ランキング（Top15）
+                </div>
+                {latest.length > 0 ? (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ color: "#888780", textAlign: "left" }}>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>順位</th>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>商品（店舗）</th>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>レビュー数</th>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>平均</th>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>Top15入り回数</th>
+                        <th style={{ padding: "6px 8px", fontWeight: 400 }}>価格</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {latest.map((item, i) => (
+                        <tr key={item.itemCode} style={{ borderTop: "0.5px solid rgba(120,120,120,0.15)" }}>
+                          <td style={{ padding: "8px" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 500, color: "#7955D4", width: 24, textAlign: "center" }}>
+                              {item.rank || i + 1}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            <div style={{ fontSize: 13 }}>
+                              <div style={{ fontWeight: 400 }}>{item.name}</div>
+                              <div style={{ fontSize: 11, color: "#888780", marginTop: 2 }}>{item.shop}</div>
+                            </div>
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            <span style={{ fontSize: 12, color: "#444441" }}>{item.reviews?.toLocaleString() || "—"}</span>
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            <span style={{ fontSize: 12, color: "#444441" }}>{item.reviewAvg ? "★" + item.reviewAvg : "—"}</span>
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: countOf(item.itemCode) >= 5 ? "#7955D4" : "#444441" }}>
+                              {countOf(item.itemCode)} 回
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            <span style={{ fontSize: 12, color: "#444441" }}>{item.price ? "¥" + item.price.toLocaleString() : "—"}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "48px 16px", color: "#888780" }}>
+                    <Trophy size={32} style={{ color: "#BDBDB8" }} />
+                    <span style={{ fontSize: 13 }}>まだデータがありません。右上の「売れ筋を取得して記録」ボタンを押してください。</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
 
