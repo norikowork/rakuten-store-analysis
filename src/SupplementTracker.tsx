@@ -456,7 +456,7 @@ export default function SupplementTracker() {
     const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey, genreId });
     const res = await fetch(`${R}?${params.toString()}`);
     const json = await res.json();
-    const items = json.Items || json.items || [];
+    const items = (json.Items || json.items || []).slice().sort((a, b) => (a.rank || 999) - (b.rank || 999));
     return items.slice(0, 15).map((it) => ({
       rank: it.rank, itemCode: it.itemCode, name: it.itemName, shop: it.shopName,
       reviews: it.reviewCount, reviewAvg: it.reviewAverage, price: it.itemPrice, url: it.itemUrl,
@@ -1055,6 +1055,7 @@ export default function SupplementTracker() {
             const bs = data.bestsellers?.[bsCat];
             const dates = Object.keys(bs?.history || {}).sort();
             const latest = dates.length ? bs.history[dates[dates.length - 1]] : [];
+            const latestSorted = [...latest].sort((a, b) => (a.rank || 999) - (b.rank || 999));
             const countOf = (code) => dates.filter((d) => (bs.history[d] || []).some((x) => x.itemCode === code)).length;
 
             return (
@@ -1075,7 +1076,7 @@ export default function SupplementTracker() {
                       </tr>
                     </thead>
                     <tbody>
-                      {latest.map((item, i) => (
+                      {latestSorted.map((item, i) => (
                         <tr key={item.itemCode} style={{ borderTop: "0.5px solid rgba(120,120,120,0.15)" }}>
                           <td style={{ padding: "8px" }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 500, color: "#7955D4", width: 24, textAlign: "center" }}>
