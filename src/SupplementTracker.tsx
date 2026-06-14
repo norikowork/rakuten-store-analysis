@@ -205,7 +205,6 @@ const monthKey = (dateStr) => dateStr.slice(0, 7);
 const METRICS = {
   reviews: { label: "レビュー数", unit: "件", betterHigh: true },
   rank: { label: "ランキング順位", unit: "位", betterHigh: false },
-  price: { label: "価格", unit: "円", betterHigh: false },
 };
 
 const colorFor = (products, id) => {
@@ -510,8 +509,11 @@ export default function SupplementTracker() {
     const latest = series.length ? series[series.length - 1] : null;
     const prev = series.length > 1 ? series[series.length - 2] : null;
     const delta = latest != null && prev != null ? latest - prev : null;
-    return { p, latest, delta };
-  }), [visible, chart]);
+    // 最新の価格を取得
+    const allDates = Object.keys(data.logs[p.id] || {}).sort().reverse();
+    const latestPrice = allDates.length ? (data.logs[p.id][allDates[0]]?.price) : null;
+    return { p, latest, delta, latestPrice };
+  }), [visible, chart, data.logs]);
 
   const hasData = chart.some((r) => visible.some((p) => r[p.id] != null));
 
@@ -565,7 +567,7 @@ export default function SupplementTracker() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
-            {summary.map(({ p, latest, delta }) => (
+            {summary.map(({ p, latest, delta, latestPrice }) => (
               <div key={p.id} style={{ background: "#fff", border, borderRadius: 12, padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                   <span style={{ width: 9, height: 9, borderRadius: 3, background: colorFor(data.products, p.id), flexShrink: 0 }} />
@@ -578,6 +580,11 @@ export default function SupplementTracker() {
                     <span style={{ fontSize: 12, fontWeight: 500, color: (delta > 0) === METRICS[metric].betterHigh ? "#0F6E56" : "#A32D2D" }}>{delta > 0 ? "+" : ""}{delta.toLocaleString()}</span>
                   )}
                 </div>
+                {latestPrice != null && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: "#888780", fontWeight: 400 }}>
+                    ¥{latestPrice.toLocaleString()}
+                  </div>
+                )}
               </div>
             ))}
           </div>
