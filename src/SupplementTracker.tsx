@@ -197,7 +197,7 @@ const SEED = {
   ],
   backlinks: {},
   keywords: KEYWORDS,
-  searchKeywords: [],
+  searchKeywords: { "エクオール": [], "カリウム": [] },
 };
 
 const monthKey = (dateStr) => dateStr.slice(0, 7);
@@ -252,6 +252,7 @@ export default function SupplementTracker() {
   const [newP, setNewP] = useState({ name: "", category: "エクオール", store: "", itemCode: "" });
   const [ngInput, setNgInput] = useState("");
   const [skInput, setSkInput] = useState("");
+  const [skCat, setSkCat] = useState("エクオール");
   const [skPage, setSkPage] = useState(1);
   const SK_PER_PAGE = 100;
 
@@ -323,7 +324,7 @@ export default function SupplementTracker() {
           sites: d.sites || SEED.sites,
           backlinks: d.backlinks || {},
           keywords: d.keywords || SEED.keywords,
-          searchKeywords: d.searchKeywords || [],
+          searchKeywords: (d.searchKeywords && !Array.isArray(d.searchKeywords)) ? d.searchKeywords : { "エクオール": [], "カリウム": [] },
         });
       }
       setLoaded(true);
@@ -420,7 +421,8 @@ export default function SupplementTracker() {
 
   const importSearchKeywords = async () => {
     const lines = skInput.split(/\n/).map((l) => l.trim()).filter(Boolean);
-    const map = new Map((data.searchKeywords || []).map((k) => [k.word, { ...k }]));
+    const cur = (data.searchKeywords && data.searchKeywords[skCat]) || [];
+    const map = new Map(cur.map((k) => [k.word, { ...k }]));
     for (const l of lines) {
       const m = l.split(/[,\t]/);
       const word = (m[0] || "").trim();
@@ -435,15 +437,16 @@ export default function SupplementTracker() {
       }
     }
     const next = [...map.values()].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.volume || 0) - (a.volume || 0));
-    await commit({ ...data, searchKeywords: next }, `${lines.length}語をインポートしました`);
+    await commit({ ...data, searchKeywords: { ...(data.searchKeywords || {}), [skCat]: next } }, `${skCat}に${lines.length}語インポートしました`);
     setSkInput("");
     setSkPage(1);
   };
   const clearSearchKeywords = async () => {
-    await commit({ ...data, searchKeywords: [] }, "検索キーワードをクリアしました");
+    await commit({ ...data, searchKeywords: { ...(data.searchKeywords || {}), [skCat]: [] } }, "検索キーワードをクリアしました");
   };
   const removeSearchKeyword = async (word) => {
-    await commit({ ...data, searchKeywords: (data.searchKeywords || []).filter((k) => k.word !== word) }, "削除しました");
+    const cur = (data.searchKeywords?.[skCat] || []).filter((k) => k.word !== word);
+    await commit({ ...data, searchKeywords: { ...(data.searchKeywords || {}), [skCat]: cur } }, "削除しました");
   };
 
   const exportJson = () => {
@@ -1000,6 +1003,10 @@ export default function SupplementTracker() {
             <div style={{ fontSize: 13, color: "#5F5E5A", marginBottom: 12, lineHeight: 1.6 }}>
               ラッコキーワード等で調べた語を貼り付けて取り込みます。1行1語。『語,検索数』で検索数も取り込めます
             </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setSkCat("エクオール")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: skCat === "エクオール" ? "#fff" : "#444441", background: skCat === "エクオール" ? "#534AB7" : "none", border: skCat === "エクオール" ? "none" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer" }}>エクオール</button>
+              <button onClick={() => setSkCat("カリウム")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: skCat === "カリウム" ? "#fff" : "#444441", background: skCat === "カリウム" ? "#0F6E56" : "none", border: skCat === "カリウム" ? "none" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer" }}>カリウム</button>
+            </div>
             <textarea 
               value={skInput} 
               onChange={(e) => setSkInput(e.target.value)}
@@ -1021,13 +1028,13 @@ export default function SupplementTracker() {
             </div>
           </div>
 
-          {data.searchKeywords && data.searchKeywords.length > 0 ? (
+          {data.searchKeywords && Object.keys(data.searchKeywords).length > 0 && (data.searchKeywords["エクオール"]?.length > 0 || data.searchKeywords["カリウム"]?.length > 0) ? (
             <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>
-                おすすめキーワードランキング（インポート回数順）
+                {skCat} 検索キーワードランキング（インポート回数順）
               </div>
               {(() => {
-                const skAll = data.searchKeywords || [];
+                const skAll = data.searchKeywords?.[skCat] || [];
                 const skTotalPages = Math.max(1, Math.ceil(skAll.length / SK_PER_PAGE));
                 const skPageSafe = Math.min(skPage, skTotalPages);
                 const skShown = skAll.slice((skPageSafe - 1) * SK_PER_PAGE, skPageSafe * SK_PER_PAGE);
