@@ -17,10 +17,11 @@ const RAKUTEN_BASE = (typeof import.meta !== "undefined" && import.meta.env && i
 const ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 1商品ぶんの最新値を取得。itemCode優先、keyword + shopCode で検索（2026-04-01 API版）。
-async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
+// 1商品ぶんの最新値を取得。itemCode優先、0件ならkeyword+shopCodeへフォールバック（2026-04-01 API版）。
+async function fetchRakutenItem(product, appId, accessKey, attempt = 1, useKeyword = false) {
   const params = new URLSearchParams({ format: "json", formatVersion: "2", applicationId: appId, accessKey });
-  if (product.itemCode) {
+  const byItemCode = product.itemCode && !useKeyword;
+  if (byItemCode) {
     params.set("itemCode", product.itemCode);        // itemCodeの時は hits を付けない
   } else {
     params.set("hits", "3");
@@ -33,14 +34,21 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1) {
   try { json = JSON.parse(text); } catch (e) {}
   if ((!res.ok || !json) && attempt < 2) {
     await new Promise((r) => setTimeout(r, 1500));
-    return fetchRakutenItem(product, appId, accessKey, attempt + 1);
+    return fetchRakutenItem(product, appId, accessKey, attempt + 1, useKeyword);
   }
   if (json && (json.error || json.errors)) {
     throw new Error(json.error_description || json.errors?.errorMessage || json.error || `HTTP ${res.status}`);
   }
   const raw = json?.Items?.[0];
   const item = raw ? (raw.Item || raw) : null;
-  if (!item) throw new Error("該当商品が見つかりません");
+  if (!item) {
+    // itemCodeで0件 → keyword+shopCodeでもう一度だけ試す（itemCode失効対策）
+    if (byItemCode && (product.keyword || product.shopCode || product.name)) {
+      await new Promise((r) => setTimeout(r, 800));
+      return fetchRakutenItem(product, appId, accessKey, 1, true);
+    }
+    throw new Error("該当商品が見つかりません");
+  }
   const num = (v) => (v == null || v === "" ? null : Number(v));
   return { reviews: num(item.reviewCount), price: num(item.itemPrice), name: item.itemName, url: item.itemUrl, itemCode: item.itemCode };
 }
