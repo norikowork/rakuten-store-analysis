@@ -1,9 +1,71 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import SupplementTracker from "./SupplementTracker";
+// @ts-ignore
+// lz-stringはCommonJS形式なので動的インポートで対応
+async function getLZString() {
+  const module = await import("lz-string");
+  return module.default || module;
+}
+
+async function compressToBase64(str: string): Promise<string> {
+  const lz = await getLZString();
+  return lz.compressToBase64(str);
+}
+
+async function decompressFromBase64(str: string): Promise<string | null> {
+  const lz = await getLZString();
+  return lz.decompressFromBase64(str);
+}
 
 // 認証SDKの動的インポート
 let auth: any = null;
+
+// 圧縮・解凍の共通関数（後方互換）
+async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
+  try {
+    const compressed = compressToBase64(value);
+    const res = await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: compressed })
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (e: any) {
+    console.error("DB保存例外:", e);
+    return { ok: false, status: 0 };
+  }
+}
+
+async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
+  try {
+    const res = await fetch(`/api/state?key=${key}`);
+    if (!res.ok) {
+      console.warn("DB取得失敗:", res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (!data.value) return { value: null };
+    
+    // まず非圧縮としてJSON.parseを試みる（後方互換）
+    try {
+      const parsed = JSON.parse(data.value);
+      return { value: data.value }; // 非圧縮データ
+    } catch {
+      // JSON parse失敗 → 圧縮データとして解凍
+      try {
+        const decompressed = decompressFromBase64(data.value);
+        return { value: decompressed };
+      } catch (decompressErr) {
+        console.error("解凍失敗:", decompressErr);
+        return { value: null };
+      }
+    }
+  } catch (e: any) {
+    console.error("DB取得例外:", e);
+    return null;
+  }
+}
 
 // UIコンポーネント
 const AuthStatusBar = ({ user, onLogin, onLogout, syncStatus }: {
@@ -192,21 +254,12 @@ function App() {
   };
 
   const migrateToDB = async (data: string) => {
-    try {
-      const res = await fetch("/api/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "rakuten-supp-tracker-v3", value: data })
-      });
-      if (res.ok) {
-        console.log("自動移行成功");
-        return true;
-      } else {
-        console.error("自動移行失敗:", res.status);
-        return false;
-      }
-    } catch (e) {
-      console.error("自動移行例外:", e);
+    const result = await saveStateToDB("rakuten-supp-tracker-v3", data);
+    if (result.ok) {
+      console.log("自動移行成功（圧縮済み）");
+      return true;
+    } else {
+      console.error("自動移行失敗:", result.status);
       return false;
     }
   };
@@ -250,16 +303,11 @@ function App() {
     (window as any).storage = {
       async get(key: string) {
         if (user) {
-          try {
-            const res = await fetch(`/api/state?key=${key}`);
-            if (res.ok) {
-              const data = await res.json();
-              return data;
-            } else {
-              throw new Error(`DB取得失敗: ${res.status}`);
-            }
-          } catch (e) {
-            console.warn("DB取得エラー、localStorageフォールバック:", e);
+          const result = await loadStateFromDB(key);
+          if (result) {
+            return result;
+          } else {
+            console.warn("DB取得エラー、localStorageフォールバック");
             const v = localStorage.getItem(key);
             return v == null ? null : { value: v };
           }
@@ -270,19 +318,11 @@ function App() {
       },
       async set(key: string, value: string) {
         if (user) {
-          try {
-            const res = await fetch("/api/state", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ key, value })
-            });
-            if (res.ok) {
-              return true;
-            } else {
-              throw new Error(`DB保存失敗: ${res.status}`);
-            }
-          } catch (e) {
-            console.warn("DB保存エラー、localStorageフォールバック:", e);
+          const result = await saveStateToDB(key, value);
+          if (result.ok) {
+            return true;
+          } else {
+            console.warn(`DB保存失敗 (HTTP ${result.status})、localStorageフォールバック`);
             localStorage.setItem(key, value);
             return true;
           }

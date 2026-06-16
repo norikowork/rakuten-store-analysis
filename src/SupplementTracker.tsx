@@ -6,6 +6,45 @@ import {
   Plus, Trash2, Download, Upload, Save, TrendingUp, Check, AlertCircle, Pencil, Link2, ExternalLink, Tags, RefreshCw, Settings, X, Search, Trophy,
 } from "lucide-react";
 
+// 認証SDKを動的インポート
+let auth: any = null;
+if (typeof window !== "undefined") {
+  import("./lib/shared/kliv-auth.js").then((m) => { auth = m.default; });
+}
+
+// lz-stringの圧縮・解凍（CommonJS形式）
+async function getLZString() {
+  // @ts-ignore
+  const lz = await import("lz-string");
+  return lz.default || lz;
+}
+
+async function compressToBase64(str: string): Promise<string> {
+  const lz = await getLZString();
+  return lz.compressToBase64(str);
+}
+
+async function decompressFromBase64(str: string): Promise<string | null> {
+  const lz = await getLZString();
+  return lz.decompressFromBase64(str);
+}
+
+// 圧縮・解凍の共通関数（後方互換）
+async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
+  try {
+    const compressed = await compressToBase64(value);
+    const res = await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: compressed })
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (e: any) {
+    console.error("DB保存例外:", e);
+    return { ok: false, status: 0 };
+  }
+}
+
 const STORAGE_KEY = "rakuten-supp-tracker-v3";
 
 // ---- 楽天市場 商品検索API（RMS OpenAPI版）----
@@ -497,6 +536,26 @@ export default function SupplementTracker() {
     const a = document.createElement("a"); a.href = url; a.download = `rakuten-supp-${todayStr()}.json`; a.click();
     URL.revokeObjectURL(url);
   };
+  
+  const saveToCloud = async () => {
+    try {
+      const user = await auth.getUser();
+      if (!user) {
+        flash("🟠 保存スキップ（未ログイン・ローカルのみ）");
+        return;
+      }
+      const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
+      if (result.ok) {
+        flash("🟢 クラウドに保存しました（圧縮済み）");
+      } else {
+        console.error("クラウド保存失敗:", result.status);
+        flash(`🟠 クラウド保存に失敗（HTTP ${result.status}・ローカルのみ）`);
+      }
+    } catch (e) {
+      console.error("クラウド保存例外:", e);
+      flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
+    }
+  };
   const exportKeywordsCsv = () => {
     const rows = [["カテゴリ", "キーワード候補", "上位タイトル出現数", "サンプル商品数", "分類"]];
     Object.entries(data.keywords || {}).filter(([k]) => k !== "meta").forEach(([cat, cd]) => {
@@ -529,7 +588,7 @@ export default function SupplementTracker() {
             bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
           }, "読み込みしました");
 
-          // クラウドDBにも保存（認証済みの場合）
+          // クラウドDBにも保存（圧縮付き）
           try {
             const user = await auth.getUser();
             if (user) {
@@ -542,12 +601,13 @@ export default function SupplementTracker() {
                 searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
                 bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
               };
-              await fetch("/api/state", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key: STORAGE_KEY, value: JSON.stringify(data) })
-              });
-              flash("🟢 クラウドに保存しました");
+              const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
+              if (result.ok) {
+                flash("🟢 クラウドに保存しました（圧縮済み）");
+              } else {
+                console.error("クラウド保存失敗:", result.status);
+                flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
+              }
             } else {
               flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
             }
@@ -1266,6 +1326,7 @@ export default function SupplementTracker() {
 
       {/* footer */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "#888780", marginTop: 18 }}>
+        <button onClick={saveToCloud} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "#E9F6F1", border: "0.5px solid #0F6E56", borderRadius: 8, cursor: "pointer", color: "#0F6E56", fontWeight: 500 }}>クラウドに保存</button>
         <button onClick={exportJson} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Download size={14} /> データを書き出す</button>
         <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Upload size={14} /> 読み込む<input type="file" accept="application/json" onChange={importJson} style={{ display: "none" }} /></label>
       </div>
