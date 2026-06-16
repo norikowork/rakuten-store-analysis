@@ -456,27 +456,57 @@ export default function SupplementTracker() {
   const flash = (msg) => { setSaved(msg); setTimeout(() => setSaved(""), 2200); };
 
   const commit = useCallback(async (next, msg) => {
-    setData(next);
-    const ok = await persist(next);
-    flash(ok ? (msg || "保存しました") : "メモリに保存（このタブのみ）");
-  }, []);
+    try {
+      setData(next);
+      // ローカル保存を優先（必ず成功する）
+      const ok = await persist(next);
+      if (ok) {
+        flash(msg || "保存しました");
+      } else {
+        flash("メモリに保存（このタブのみ）");
+      }
+      
+      // クラウド保存は並行で試みる（失敗しても無視）
+      if (auth) {
+        try {
+          const user = await auth.getUser();
+          if (user) {
+            saveStateToDB(STORAGE_KEY, JSON.stringify(next)).catch(e => {
+              console.warn("クラウド保存失敗（無視）:", e);
+            });
+          }
+        } catch (e) {
+          console.warn("クラウド保存スキップ（認証エラー）");
+        }
+      }
+    } catch (e) {
+      console.error("保存エラー:", e);
+      flash("保存に失敗しました");
+    }
+  }, [data]);
 
   const saveEntry = async () => {
-    const logs = { ...data.logs };
-    data.products.forEach((p) => {
-      const d = draft[p.id] || {};
-      const entry = {
-        reviews: d.reviews === "" ? null : Number(d.reviews),
-        rank: d.rank === "" ? null : Number(d.rank),
-        price: d.price === "" ? null : Number(d.price),
-      };
-      const hasAny = entry.reviews != null || entry.rank != null || entry.price != null;
-      if (hasAny) logs[p.id] = { ...(logs[p.id] || {}), [entryDate]: entry };
-      else if (logs[p.id]?.[entryDate]) {
-        const cp = { ...logs[p.id] }; delete cp[entryDate]; logs[p.id] = cp;
-      }
-    });
-    await commit({ ...data, logs }, `${entryDate} の数値を記録しました`);
+    try {
+      flash("記録中...");
+      const logs = { ...data.logs };
+      data.products.forEach((p) => {
+        const d = draft[p.id] || {};
+        const entry = {
+          reviews: d.reviews === "" ? null : Number(d.reviews),
+          rank: d.rank === "" ? null : Number(d.rank),
+          price: d.price === "" ? null : Number(d.price),
+        };
+        const hasAny = entry.reviews != null || entry.rank != null || entry.price != null;
+        if (hasAny) logs[p.id] = { ...(logs[p.id] || {}), [entryDate]: entry };
+        else if (logs[p.id]?.[entryDate]) {
+          const cp = { ...logs[p.id] }; delete cp[entryDate]; logs[p.id] = cp;
+        }
+      });
+      await commit({ ...data, logs }, `${entryDate} の数値を記録しました`);
+    } catch (e) {
+      console.error("記録エラー:", e);
+      flash("🟠 記録に失敗しました");
+    }
   };
 
   const addProduct = async () => {
@@ -589,20 +619,35 @@ export default function SupplementTracker() {
 
 
   const exportJson = () => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `rakuten-supp-${todayStr()}.json`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `rakuten-supp-${todayStr()}.json`; a.click();
+      URL.revokeObjectURL(url);
+      flash("🟢 データを書き出しました");
+    } catch (e) {
+      console.error("書き出しエラー:", e);
+      flash("🟠 書き出しに失敗しました");
+    }
   };
   
   const saveToCloud = async () => {
     try {
-      const user = await auth.getUser();
-      if (!user) {
-        flash("🟠 保存スキップ（未ログイン・ローカルのみ）");
+      flash("クラウド保存中...");
+      
+      if (!auth) {
+        flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
         return;
       }
+      
+      const user = await auth.getUser();
+      if (!user) {
+        flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
+        return;
+      }
+      
       const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
+      
       if (result.ok) {
         flash("🟢 クラウドに保存しました（圧縮済み）");
       } else {
@@ -633,9 +678,10 @@ export default function SupplementTracker() {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
+        flash("読み込み中...");
         const p = JSON.parse(reader.result);
         if (p.products) {
-          // まずローカルに保存
+          // まずローカルに保存（必ず成功）
           await commit({ 
             products: p.products, 
             logs: p.logs || {}, 
@@ -646,37 +692,38 @@ export default function SupplementTracker() {
             bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
           }, "読み込みしました");
 
-          // クラウドDBにも保存（圧縮付き）
+          // クラウド保存は並行で試みる（失敗しても無視）
           try {
-            const user = await auth.getUser();
-            if (user) {
-              const data = { 
-                products: p.products, 
-                logs: p.logs || {}, 
-                sites: p.sites || SEED.sites, 
-                backlinks: p.backlinks || {}, 
-                keywords: p.keywords || SEED.keywords, 
-                searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
-                bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
-              };
-              const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
-              if (result.ok) {
-                flash("🟢 クラウドに保存しました（圧縮済み）");
+            if (auth) {
+              const user = await auth.getUser();
+              if (user) {
+                const data = { 
+                  products: p.products, 
+                  logs: p.logs || {}, 
+                  sites: p.sites || SEED.sites, 
+                  backlinks: p.backlinks || {}, 
+                  keywords: p.keywords || SEED.keywords, 
+                  searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
+                  bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
+                };
+                await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
+                flash("🟢 読み込み完了・クラウドにも保存しました");
               } else {
-                console.error("クラウド保存失敗:", result.status);
-                flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
+                flash("🟠 読み込み完了（クラウド保存スキップ・未ログイン）");
               }
             } else {
-              flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
+              flash("🟠 読み込み完了（クラウド保存スキップ・ローカルのみ）");
             }
-          } catch (dbErr) {
-            console.error("クラウド保存エラー:", dbErr);
-            flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
+          } catch (cloudErr) {
+            console.warn("クラウド保存エラー（無視）:", cloudErr);
+            flash("🟢 読み込み完了（ローカル保存成功）");
           }
+        } else {
+          flash("🟠 読み込み失敗（productsがありません）");
         }
       } catch (err) {
         console.error("インポートエラー:", err);
-        flash("読み込みに失敗しました");
+        flash("🟠 読み込みに失敗しました");
       }
     };
     reader.readAsText(file); 

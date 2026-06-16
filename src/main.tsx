@@ -25,9 +25,24 @@ let auth: any = null;
 async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
   try {
     const compressed = compressToBase64(value);
+    
+    // 認証ヘッダーを追加
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    
+    if (auth) {
+      try {
+        const user = await auth.getUser();
+        if (user) {
+          headers["x-user-uuid"] = user.uuid || "";
+        }
+      } catch (e) {
+        console.warn("ユーザー情報取得エラー（無視）:", e);
+      }
+    }
+    
     const res = await fetch("/api/state", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ key, value: compressed })
     });
     return { ok: res.ok, status: res.status };
@@ -39,7 +54,20 @@ async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean;
 
 async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
   try {
-    const res = await fetch(`/api/state?key=${key}`);
+    const headers: Record<string, string> = {};
+    
+    if (auth) {
+      try {
+        const user = await auth.getUser();
+        if (user) {
+          headers["x-user-uuid"] = user.uuid || "";
+        }
+      } catch (e) {
+        console.warn("ユーザー情報取得エラー（無視）:", e);
+      }
+    }
+    
+    const res = await fetch(`/api/state?key=${key}`, { headers });
     if (!res.ok) {
       console.warn("DB取得失敗:", res.status);
       return null;
@@ -303,11 +331,21 @@ function App() {
     (window as any).storage = {
       async get(key: string) {
         if (user) {
-          const result = await loadStateFromDB(key);
-          if (result) {
-            return result;
-          } else {
-            console.warn("DB取得エラー、localStorageフォールバック");
+          try {
+            // 認証ヘッダーを追加
+            const headers: Record<string, string> = {};
+            if (user.uuid) headers["x-user-uuid"] = user.uuid;
+            
+            const result = await loadStateFromDB(key);
+            if (result) {
+              return result;
+            } else {
+              console.warn("DB取得エラー、localStorageフォールバック");
+              const v = localStorage.getItem(key);
+              return v == null ? null : { value: v };
+            }
+          } catch (e) {
+            console.warn("DB取得例外、localStorageフォールバック:", e);
             const v = localStorage.getItem(key);
             return v == null ? null : { value: v };
           }
@@ -318,11 +356,17 @@ function App() {
       },
       async set(key: string, value: string) {
         if (user) {
-          const result = await saveStateToDB(key, value);
-          if (result.ok) {
-            return true;
-          } else {
-            console.warn(`DB保存失敗 (HTTP ${result.status})、localStorageフォールバック`);
+          try {
+            const result = await saveStateToDB(key, value);
+            if (result.ok) {
+              return true;
+            } else {
+              console.warn(`DB保存失敗 (HTTP ${result.status})、localStorageフォールバック`);
+              localStorage.setItem(key, value);
+              return true;
+            }
+          } catch (e) {
+            console.error("DB保存例外、localStorageフォールバック:", e);
             localStorage.setItem(key, value);
             return true;
           }
