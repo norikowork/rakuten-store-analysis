@@ -487,6 +487,7 @@ export default function SupplementTracker() {
 
   const saveEntry = async () => {
     try {
+      console.log("記録開始");
       flash("記録中...");
       const logs = { ...data.logs };
       data.products.forEach((p) => {
@@ -503,6 +504,7 @@ export default function SupplementTracker() {
         }
       });
       await commit({ ...data, logs }, `${entryDate} の数値を記録しました`);
+      console.log("記録完了");
     } catch (e) {
       console.error("記録エラー:", e);
       flash("🟠 記録に失敗しました");
@@ -620,10 +622,12 @@ export default function SupplementTracker() {
 
   const exportJson = () => {
     try {
+      console.log("書き出し開始");
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `rakuten-supp-${todayStr()}.json`; a.click();
       URL.revokeObjectURL(url);
+      console.log("書き出し完了");
       flash("🟢 データを書き出しました");
     } catch (e) {
       console.error("書き出しエラー:", e);
@@ -633,26 +637,36 @@ export default function SupplementTracker() {
   
   const saveToCloud = async () => {
     try {
+      console.log("クラウド保存開始");
       flash("クラウド保存中...");
       
-      if (!auth) {
-        flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
-        return;
-      }
-      
-      const user = await auth.getUser();
-      if (!user) {
-        flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
-        return;
-      }
-      
-      const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
-      
-      if (result.ok) {
-        flash("🟢 クラウドに保存しました（圧縮済み）");
-      } else {
-        console.error("クラウド保存失敗:", result.status);
-        flash(`🟠 クラウド保存に失敗（HTTP ${result.status}・ローカルのみ）`);
+      try {
+        if (!auth) {
+          console.warn("auth未定義");
+          flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
+          return;
+        }
+        
+        const user = await auth.getUser();
+        if (!user) {
+          console.warn("ユーザー未ログイン");
+          flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
+          return;
+        }
+        
+        console.log("ユーザー認証済み、DB保存開始");
+        const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
+        
+        if (result.ok) {
+          console.log("クラウド保存成功");
+          flash("🟢 クラウドに保存しました（圧縮済み）");
+        } else {
+          console.error("クラウド保存失敗:", result.status);
+          flash(`🟠 クラウド保存に失敗（HTTP ${result.status}・ローカルのみ）`);
+        }
+      } catch (authError) {
+        console.error("認証エラー:", authError);
+        flash("🟠 クラウド保存に失敗（認証エラー・ローカルのみ）");
       }
     } catch (e) {
       console.error("クラウド保存例外:", e);
@@ -740,12 +754,19 @@ export default function SupplementTracker() {
     const valueForPeriod = (pid, period) => {
       const logs = data.logs[pid] || {};
       const dates = Object.keys(logs).filter((d) => periodOf(d) === period).sort();
-      for (let i = dates.length - 1; i >= 0; i--) { const v = logs[dates[i]][metric]; if (v != null) return v; }
+      for (let i = dates.length - 1; i >= 0; i--) { 
+        const v = logs[dates[i]][metric]; 
+        // 数値型を保証
+        if (v != null && typeof v === "number") return v; 
+      }
       return null;
     };
     return periods.map((period) => {
       const row = { period };
-      visible.forEach((p) => { row[p.id] = valueForPeriod(p.id, period); });
+      visible.forEach((p) => { 
+        const val = valueForPeriod(p.id, period);
+        row[p.id] = val != null && typeof val === "number" ? val : null;
+      });
       return row;
     });
   }, [visible, data.logs, view, metric]);
@@ -851,7 +872,14 @@ export default function SupplementTracker() {
                 <LineChart data={chart} margin={{ top: 8, right: 16, bottom: 4, left: 4 }}>
                   <CartesianGrid stroke="rgba(120,120,120,0.12)" vertical={false} />
                   <XAxis dataKey="period" tickFormatter={labelFor} tick={{ fontSize: 11, fill: "#888780" }} />
-                  <YAxis reversed={metric === "rank"} tick={{ fontSize: 11, fill: "#888780" }} width={48} tickFormatter={(v) => v.toLocaleString()} domain={metric === "rank" ? [1, "auto"] : ["auto", "auto"]} />
+                  <YAxis 
+                    reversed={metric === "rank"} 
+                    tick={{ fontSize: 11, fill: "#888780" }} 
+                    width={48} 
+                    tickFormatter={(v) => v != null ? v.toLocaleString() : "—"} 
+                    domain={metric === "rank" ? [1, "auto"] : ["auto", "auto"]} 
+                    scale={metric === "rank" ? "ordinal" : "linear"}
+                  />
                   <Tooltip labelFormatter={labelFor} formatter={(v, name) => { const p = data.products.find((x) => x.id === name); return [v != null ? v.toLocaleString() + METRICS[metric].unit : "—", p ? p.name : name]; }} contentStyle={{ fontSize: 12, borderRadius: 8, border: "0.5px solid rgba(120,120,120,0.3)" }} />
                   {visible.map((p) => (<Line key={p.id} type="monotone" dataKey={p.id} stroke={colorFor(data.products, p.id)} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />))}
                 </LineChart>
