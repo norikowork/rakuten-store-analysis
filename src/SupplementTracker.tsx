@@ -147,7 +147,17 @@ async function fetchRakutenItem(product, appId, accessKey, attempt = 1, useKeywo
     throw new Error("該当商品が見つかりません");
   }
   const num = (v) => (v == null || v === "" ? null : Number(v));
-  return { reviews: num(item.reviewCount), price: num(item.itemPrice), name: item.itemName, url: item.itemUrl, itemCode: item.itemCode };
+  // フォールバックしたかどうかをフラグとして返す
+  return { 
+    reviews: num(item.reviewCount), 
+    price: num(item.itemPrice), 
+    name: item.itemName, 
+    url: item.itemUrl, 
+    itemCode: item.itemCode,
+    actualName: item.itemName,
+    actualItemCode: item.itemCode,
+    isFallback: useKeyword
+  };
 }
 
 // 楽天商品ランキングを取得（genreIdベース、page1のみ）
@@ -402,9 +412,24 @@ export default function SupplementTracker() {
         const rank = (r.itemCode && rankMap[r.itemCode] != null) ? rankMap[r.itemCode] : null;
         const entry = { reviews: r.reviews, rank, price: r.price };
         logs[p.id] = { ...(logs[p.id] || {}), [entryDate]: entry };
-        results.push({ name: p.name, ok: true, reviews: r.reviews, price: r.price, rank });
+        
+        // 結果に商品情報を追加
+        results.push({ 
+          name: p.name, 
+          ok: true, 
+          reviews: r.reviews, 
+          price: r.price, 
+          rank,
+          actualName: r.actualName,
+          actualItemCode: r.actualItemCode,
+          isFallback: r.isFallback
+        });
       } catch (e) {
-        results.push({ name: p.name, ok: false, err: String(e.message || e) });
+        results.push({ 
+          name: p.name, 
+          ok: false, 
+          err: String(e.message || e) 
+        });
       }
       await sleep(1200);
     }
@@ -923,12 +948,20 @@ export default function SupplementTracker() {
             {fetchLog && (
               <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 4 }}>
                 {fetchLog.map((r, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "4px 8px", borderRadius: 6, background: r.ok ? "#E9F6F1" : "#FBEBEB" }}>
-                    {r.ok ? <Check size={13} style={{ color: "#0F6E56", flexShrink: 0 }} /> : <X size={13} style={{ color: "#A32D2D", flexShrink: 0 }} />}
-                    <span style={{ flex: 1, minWidth: 0, color: "#444441" }}>{r.name}</span>
-                    {r.ok
-                      ? <span style={{ color: "#5F5E5A" }}>レビュー {r.reviews?.toLocaleString() ?? "—"} / ¥{r.price?.toLocaleString() ?? "—"}</span>
-                      : <span style={{ color: "#A32D2D" }}>{r.err}</span>}
+                  <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 10px", borderRadius: 6, background: r.ok ? "#E9F6F1" : "#FBEBEB" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {r.ok ? <Check size={13} style={{ color: "#0F6E56", flexShrink: 0 }} /> : <X size={13} style={{ color: "#A32D2D", flexShrink: 0 }} />}
+                      <span style={{ flex: 1, minWidth: 0, color: "#444441", fontWeight: 500 }}>{r.name}</span>
+                      {r.isFallback && <span style={{ fontSize: 11, padding: "2px 6px", background: "#FFF4E5", color: "#F5A623", borderRadius: 4, border: "0.5px solid rgba(245,166,35,0.3)" }}>⚠️ 別商品の可能性（キーワード検索）</span>}
+                      <span style={{ color: "#5F5E5A" }}>レビュー {r.reviews?.toLocaleString() ?? "—"} / ¥{r.price?.toLocaleString() ?? "—"}</span>
+                    </div>
+                    {r.ok && (
+                      <div style={{ display: "flex", gap: 6, fontSize: 11.5, color: "#888780", marginLeft: 21 }}>
+                        <span>取得: {r.actualName}</span>
+                        <span>itemCode: {r.actualItemCode}</span>
+                      </div>
+                    )}
+                    {!r.ok && <span style={{ color: "#A32D2D", fontSize: 12 }}>{r.err}</span>}
                   </div>
                 ))}
               </div>
