@@ -515,10 +515,54 @@ export default function SupplementTracker() {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      try { const p = JSON.parse(reader.result); if (p.products) await commit({ products: p.products, logs: p.logs || {}, sites: p.sites || SEED.sites, backlinks: p.backlinks || {}, keywords: p.keywords || SEED.keywords, searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } }, "読み込みしました"); }
-      catch (err) { flash("読み込みに失敗しました"); }
+      try {
+        const p = JSON.parse(reader.result);
+        if (p.products) {
+          // まずローカルに保存
+          await commit({ 
+            products: p.products, 
+            logs: p.logs || {}, 
+            sites: p.sites || SEED.sites, 
+            backlinks: p.backlinks || {}, 
+            keywords: p.keywords || SEED.keywords, 
+            searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
+            bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
+          }, "読み込みしました");
+
+          // クラウドDBにも保存（認証済みの場合）
+          try {
+            const user = await auth.getUser();
+            if (user) {
+              const data = { 
+                products: p.products, 
+                logs: p.logs || {}, 
+                sites: p.sites || SEED.sites, 
+                backlinks: p.backlinks || {}, 
+                keywords: p.keywords || SEED.keywords, 
+                searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
+                bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
+              };
+              await fetch("/api/state", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: STORAGE_KEY, value: JSON.stringify(data) })
+              });
+              flash("🟢 クラウドに保存しました");
+            } else {
+              flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
+            }
+          } catch (dbErr) {
+            console.error("クラウド保存エラー:", dbErr);
+            flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
+          }
+        }
+      } catch (err) {
+        console.error("インポートエラー:", err);
+        flash("読み込みに失敗しました");
+      }
     };
-    reader.readAsText(file); e.target.value = "";
+    reader.readAsText(file); 
+    e.target.value = "";
   };
 
   const visible = useMemo(() => data.products.filter((p) => cat === "すべて" || p.category === cat), [data.products, cat]);
