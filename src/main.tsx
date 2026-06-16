@@ -21,80 +21,6 @@ async function decompressFromBase64(str: string): Promise<string | null> {
 // 認証SDKの動的インポート
 let auth: any = null;
 
-// 圧縮・解凍の共通関数（後方互換）
-async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
-  try {
-    const compressed = compressToBase64(value);
-    
-    // 認証ヘッダーを追加
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    
-    if (auth) {
-      try {
-        const user = await auth.getUser();
-        if (user) {
-          headers["x-user-uuid"] = user.uuid || "";
-        }
-      } catch (e) {
-        console.warn("ユーザー情報取得エラー（無視）:", e);
-      }
-    }
-    
-    const res = await fetch("/api/state", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ key, value: compressed })
-    });
-    return { ok: res.ok, status: res.status };
-  } catch (e: any) {
-    console.error("DB保存例外:", e);
-    return { ok: false, status: 0 };
-  }
-}
-
-async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
-  try {
-    const headers: Record<string, string> = {};
-    
-    if (auth) {
-      try {
-        const user = await auth.getUser();
-        if (user) {
-          headers["x-user-uuid"] = user.uuid || "";
-        }
-      } catch (e) {
-        console.warn("ユーザー情報取得エラー（無視）:", e);
-      }
-    }
-    
-    const res = await fetch(`/api/state?key=${key}`, { headers });
-    if (!res.ok) {
-      console.warn("DB取得失敗:", res.status);
-      return null;
-    }
-    const data = await res.json();
-    if (!data.value) return { value: null };
-    
-    // まず非圧縮としてJSON.parseを試みる（後方互換）
-    try {
-      const parsed = JSON.parse(data.value);
-      return { value: data.value }; // 非圧縮データ
-    } catch {
-      // JSON parse失敗 → 圧縮データとして解凍
-      try {
-        const decompressed = decompressFromBase64(data.value);
-        return { value: decompressed };
-      } catch (decompressErr) {
-        console.error("解凍失敗:", decompressErr);
-        return { value: null };
-      }
-    }
-  } catch (e: any) {
-    console.error("DB取得例外:", e);
-    return null;
-  }
-}
-
 // UIコンポーネント
 const AuthStatusBar = ({ user, onLogin, onLogout, syncStatus }: {
   user: any;
@@ -255,19 +181,6 @@ function App() {
       if (u) {
         setUser(u);
         setSyncStatus("cloud");
-        // DBにデータがあるかチェック
-        const dbRes = await fetch("/api/state?key=rakuten-supp-tracker-v3");
-        console.log("DBデータチェック:", dbRes.status);
-        if (dbRes.ok) {
-          const dbData = await dbRes.json();
-          console.log("DBデータ:", dbData);
-          // DBにデータがない && localStorageにあるなら自動移行
-          const localData = localStorage.getItem("rakuten-supp-tracker-v3");
-          if (!dbData.value && localData) {
-            console.log("自動移行開始: localStorage -> DB");
-            await migrateToDB(localData);
-          }
-        }
       } else {
         setUser(null);
         setSyncStatus("local");
@@ -301,19 +214,6 @@ function App() {
       console.log("ユーザー取得:", u);
       setUser(u);
       setSyncStatus("cloud");
-      
-      // ログイン後、データ移行チェック
-      const dbRes = await fetch("/api/state?key=rakuten-supp-tracker-v3");
-      console.log("ログイン後DBチェック:", dbRes.status);
-      if (dbRes.ok) {
-        const dbData = await dbRes.json();
-        console.log("ログイン後DBデータ:", dbData);
-        const localData = localStorage.getItem("rakuten-supp-tracker-v3");
-        if (!dbData.value && localData) {
-          console.log("ログイン後自動移行開始");
-          await migrateToDB(localData);
-        }
-      }
     } catch (e) {
       console.error("ログインエラー:", e);
       throw e;
@@ -355,24 +255,13 @@ function App() {
         }
       },
       async set(key: string, value: string) {
-        if (user) {
-          try {
-            const result = await saveStateToDB(key, value);
-            if (result.ok) {
-              return true;
-            } else {
-              console.warn(`DB保存失敗 (HTTP ${result.status})、localStorageフォールバック`);
-              localStorage.setItem(key, value);
-              return true;
-            }
-          } catch (e) {
-            console.error("DB保存例外、localStorageフォールバック:", e);
-            localStorage.setItem(key, value);
-            return true;
-          }
-        } else {
+        // localStorageのみ（DB保存機能は削除）
+        try {
           localStorage.setItem(key, value);
           return true;
+        } catch (e) {
+          console.error("localStorage保存エラー:", e);
+          return false;
         }
       }
     };

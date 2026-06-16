@@ -483,32 +483,14 @@ export default function SupplementTracker() {
   const commit = useCallback(async (next, msg) => {
     try {
       setData(next);
-      // ローカル保存を優先（必ず成功する）
+      // ローカル保存のみ（DB保存は削除）
       const ok = await persist(next);
-      if (ok) {
-        flash(msg || "保存しました");
-      } else {
-        flash("メモリに保存（このタブのみ）");
-      }
-      
-      // クラウド保存は並行で試みる（失敗しても無視）
-      if (auth) {
-        try {
-          const user = await auth.getUser();
-          if (user) {
-            saveStateToDB(STORAGE_KEY, JSON.stringify(next)).catch(e => {
-              console.warn("クラウド保存失敗（無視）:", e);
-            });
-          }
-        } catch (e) {
-          console.warn("クラウド保存スキップ（認証エラー）");
-        }
-      }
+      flash(ok ? (msg || "保存しました") : "メモリに保存（このタブのみ）");
     } catch (e) {
       console.error("保存エラー:", e);
       flash("保存に失敗しました");
     }
-  }, [data]);
+  }, []);
 
   const saveEntry = async () => {
     try {
@@ -659,45 +641,6 @@ export default function SupplementTracker() {
       flash("🟠 書き出しに失敗しました");
     }
   };
-  
-  const saveToCloud = async () => {
-    try {
-      console.log("クラウド保存開始");
-      flash("クラウド保存中...");
-      
-      try {
-        if (!auth) {
-          console.warn("auth未定義");
-          flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
-          return;
-        }
-        
-        const user = await auth.getUser();
-        if (!user) {
-          console.warn("ユーザー未ログイン");
-          flash("🟠 クラウド保存スキップ（未ログイン・ローカルのみ）");
-          return;
-        }
-        
-        console.log("ユーザー認証済み、DB保存開始");
-        const result = await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
-        
-        if (result.ok) {
-          console.log("クラウド保存成功");
-          flash("🟢 クラウドに保存しました（圧縮済み）");
-        } else {
-          console.error("クラウド保存失敗:", result.status);
-          flash(`🟠 クラウド保存に失敗（HTTP ${result.status}・ローカルのみ）`);
-        }
-      } catch (authError) {
-        console.error("認証エラー:", authError);
-        flash("🟠 クラウド保存に失敗（認証エラー・ローカルのみ）");
-      }
-    } catch (e) {
-      console.error("クラウド保存例外:", e);
-      flash("🟠 クラウド保存に失敗（ローカルのみ・このまま閉じると消えます）");
-    }
-  };
   const exportKeywordsCsv = () => {
     const rows = [["カテゴリ", "キーワード候補", "上位タイトル出現数", "サンプル商品数", "分類"]];
     Object.entries(data.keywords || {}).filter(([k]) => k !== "meta").forEach(([cat, cd]) => {
@@ -720,7 +663,7 @@ export default function SupplementTracker() {
         flash("読み込み中...");
         const p = JSON.parse(reader.result);
         if (p.products) {
-          // まずローカルに保存（必ず成功）
+          // ローカルにのみ保存（DB保存は削除）
           await commit({ 
             products: p.products, 
             logs: p.logs || {}, 
@@ -730,33 +673,8 @@ export default function SupplementTracker() {
             searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
             bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
           }, "読み込みしました");
-
-          // クラウド保存は並行で試みる（失敗しても無視）
-          try {
-            if (auth) {
-              const user = await auth.getUser();
-              if (user) {
-                const data = { 
-                  products: p.products, 
-                  logs: p.logs || {}, 
-                  sites: p.sites || SEED.sites, 
-                  backlinks: p.backlinks || {}, 
-                  keywords: p.keywords || SEED.keywords, 
-                  searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
-                  bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
-                };
-                await saveStateToDB(STORAGE_KEY, JSON.stringify(data));
-                flash("🟢 読み込み完了・クラウドにも保存しました");
-              } else {
-                flash("🟠 読み込み完了（クラウド保存スキップ・未ログイン）");
-              }
-            } else {
-              flash("🟠 読み込み完了（クラウド保存スキップ・ローカルのみ）");
-            }
-          } catch (cloudErr) {
-            console.warn("クラウド保存エラー（無視）:", cloudErr);
-            flash("🟢 読み込み完了（ローカル保存成功）");
-          }
+          
+          flash("🟢 読み込み完了（ローカル保存成功）");
         } else {
           flash("🟠 読み込み失敗（productsがありません）");
         }
@@ -1492,7 +1410,6 @@ export default function SupplementTracker() {
 
       {/* footer */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "#888780", marginTop: 18 }}>
-        <button onClick={saveToCloud} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "#E9F6F1", border: "0.5px solid #0F6E56", borderRadius: 8, cursor: "pointer", color: "#0F6E56", fontWeight: 500 }}>クラウドに保存</button>
         <button onClick={exportJson} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Download size={14} /> データを書き出す</button>
         <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Upload size={14} /> 読み込む<input type="file" accept="application/json" onChange={importJson} style={{ display: "none" }} /></label>
       </div>
