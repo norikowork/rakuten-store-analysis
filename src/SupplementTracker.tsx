@@ -19,12 +19,12 @@ async function getLZString() {
   return lz.default || lz;
 }
 
-async function compressToBase64(str: string): Promise<string> {
+async function compressToBase64Impl(str: string): Promise<string> {
   const lz = await getLZString();
   return lz.compressToBase64(str);
 }
 
-async function decompressFromBase64(str: string): Promise<string | null> {
+async function decompressFromBase64Impl(str: string): Promise<string | null> {
   const lz = await getLZString();
   return lz.decompressFromBase64(str);
 }
@@ -32,7 +32,7 @@ async function decompressFromBase64(str: string): Promise<string | null> {
 // 圧縮・解凍の共通関数（後方互換）
 async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
   try {
-    const compressed = await compressToBase64(value);
+    const compressed = await compressToBase64Impl(value);
     const res = await fetch("/api/state", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
