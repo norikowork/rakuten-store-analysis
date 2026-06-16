@@ -33,15 +33,73 @@ async function decompressFromBase64Impl(str: string): Promise<string | null> {
 async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean; status: number }> {
   try {
     const compressed = await compressToBase64Impl(value);
+    
+    // 認証ヘッダーを追加
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    
+    if (auth) {
+      try {
+        const user = await auth.getUser();
+        if (user) {
+          headers["x-user-uuid"] = user.uuid || "";
+        }
+      } catch (e) {
+        console.warn("ユーザー情報取得エラー:", e);
+      }
+    }
+    
     const res = await fetch("/api/state", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ key, value: compressed })
     });
     return { ok: res.ok, status: res.status };
   } catch (e: any) {
     console.error("DB保存例外:", e);
     return { ok: false, status: 0 };
+  }
+}
+
+async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
+  try {
+    const headers: Record<string, string> = {};
+    
+    if (auth) {
+      try {
+        const user = await auth.getUser();
+        if (user) {
+          headers["x-user-uuid"] = user.uuid || "";
+        }
+      } catch (e) {
+        console.warn("ユーザー情報取得エラー:", e);
+      }
+    }
+    
+    const res = await fetch(`/api/state?key=${key}`, { headers });
+    if (!res.ok) {
+      console.warn("DB取得失敗:", res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (!data.value) return { value: null };
+    
+    // まず非圧縮としてJSON.parseを試みる（後方互換）
+    try {
+      const parsed = JSON.parse(data.value);
+      return { value: data.value }; // 非圧縮データ
+    } catch {
+      // JSON parse失敗 → 圧縮データとして解凍
+      try {
+        const decompressed = await decompressFromBase64Impl(data.value);
+        return { value: decompressed };
+      } catch (decompressErr) {
+        console.error("解凍失敗:", decompressErr);
+        return { value: null };
+      }
+    }
+  } catch (e: any) {
+    console.error("DB取得例外:", e);
+    return null;
   }
 }
 
