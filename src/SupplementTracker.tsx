@@ -1097,58 +1097,6 @@ export default function SupplementTracker() {
                           <span style={{ fontSize: 13, color: "#A32D2D", fontWeight: 500 }}>⚠️ NGワードが{found.length}件見つかりました</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          </div>
-
-          {/* 検索キーワード（手動インポート） */}
-          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
-            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-              <Tags size={16} style={{ color: "#0F6E56" }} />
-              検索キーワード（手動インポート）
-            </div>
-            <div style={{ fontSize: 12, color: "#5F5E5A", marginBottom: 10, lineHeight: 1.6 }}>
-              ラッコキーワード等で調べた語を貼り付け。1行1語。『語,検索数』の形式なら検索数も取り込めます
-            </div>
-            <textarea 
-              value={skInput} 
-              onChange={(e) => setSkInput(e.target.value)}
-              placeholder="エクオール おすすめ&#10;エクオール 比較,1200&#10;エクオール 効果,800"
-              style={{ 
-                width: "100%", 
-                minHeight: 80, 
-                padding: "10px 12px", 
-                fontSize: 13, 
-                border: "0.5px solid rgba(120,120,120,0.3)", 
-                borderRadius: 8, 
-                resize: "vertical",
-                fontFamily: "inherit",
-                marginBottom: 10
-              }}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={importSearchKeywords} disabled={!skInput.trim()} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#fff", background: skInput.trim() ? "#0F6E56" : "#BDBDB8", border: "none", borderRadius: 6, cursor: skInput.trim() ? "pointer" : "default" }}>インポート</button>
-              <button onClick={clearSearchKeywords} disabled={!data.searchKeywords?.length} style={{ padding: "8px 16px", fontSize: 13, color: "#444441", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 6, cursor: data.searchKeywords?.length ? "pointer" : "default" }}>全消去</button>
-            </div>
-            {data.searchKeywords && data.searchKeywords.length > 0 && (
-              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
-                {data.searchKeywords.map((k) => {
-                  const ng = findNgWords(k.word);
-                  return (
-                    <div key={k.word} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#F7F6F2", borderRadius: 6, border: "0.5px solid rgba(120,120,120,0.15)" }}>
-                      <span style={{ flex: 1, fontSize: 12.5, color: "#444441" }}>{k.word}</span>
-                      {k.volume && (
-                        <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#E1F5EE", color: "#0F6E56", fontWeight: 500 }}>{k.volume.toLocaleString()}</span>
-                      )}
-                      {ng.length > 0 && (
-                        <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ NG</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
                           {found.map((w) => (
                             <span key={w} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#FBEBEB", color: "#A32D2D", border: "0.5px solid #FCC", fontWeight: 500 }}>⚠️ {w}</span>
                           ))}
@@ -1168,7 +1116,153 @@ export default function SupplementTracker() {
             )}
           </div>
 
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+          {/* 📊 リコメンド（検索キーワード × 上位7商品タイトル） */}
+          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px 8px", fontSize: 14, fontWeight: 500, color: "#5F5E5A" }}>
+              📊 リコメンド（検索キーワード × 上位7商品タイトル）
+            </div>
+            
+            {(() => {
+              const cats = ["エクオール", "カリウム"];
+              return cats.map(cat => {
+                const bsHistory = data.bestsellers?.[cat]?.history || {};
+                const dates = Object.keys(bsHistory).sort();
+                const latest = dates.length ? bsHistory[dates[dates.length - 1]] || [] : [];
+                const top7 = latest.slice(0, 7);
+                
+                const searchKws = data.searchKeywords?.[cat] || [];
+                const terms = data.keywords?.[cat]?.terms || [];
+                
+                // 案内表示
+                if (top7.length === 0) {
+                  return (
+                    <div key={cat} style={{ marginBottom: 16, padding: 16, background: "#F7F6F2", borderRadius: 8, textAlign: "center", fontSize: 13, color: "#888780" }}>
+                      売れ筋ランキングを取得すると表示されます
+                    </div>
+                  );
+                }
+                
+                if (searchKws.length === 0) {
+                  return (
+                    <div key={cat} style={{ marginBottom: 16, padding: 16, background: "#F7F6F2", borderRadius: 8, textAlign: "center", fontSize: 13, color: "#888780" }}>
+                      検索キーワードをインポートすると表示されます
+                    </div>
+                  );
+                }
+                
+                // 表記ゆれ展開関数
+                const expandVariations = (word) => {
+                  const variations = [];
+                  const parts = word.split(/\/|・/);
+                  parts.forEach(part => {
+                    const trimmed = part.trim();
+                    if (trimmed) {
+                      const withoutParen = trimmed.replace(/（[^）]*）/g, "").replace(/\([^)]*\)/g, "");
+                      if (withoutParen) {
+                        variations.push(withoutParen);
+                      }
+                    }
+                  });
+                  return variations;
+                };
+                
+                // 各語の分析
+                const analyzed = terms.map(term => {
+                  const variations = expandVariations(term.word);
+                  const titleHits = top7.filter(item => {
+                    const title = item.name || "";
+                    return variations.some(v => title.includes(v));
+                  }).length;
+                  const searchHits = searchKws.filter(kw => {
+                    return variations.some(v => kw.word.includes(v));
+                  }).length;
+                  return { word: term.word, type: term.type, titleHits, searchHits };
+                });
+                
+                // グループ分け
+                const ironPlate = analyzed.filter(t => t.titleHits >= 4 && t.searchHits >= 50);
+                const chance = analyzed.filter(t => t.searchHits >= 5 && t.titleHits <= 1 && t.type !== "信頼");
+                const trust = analyzed.filter(t => t.type === "信頼" && t.titleHits >= 3);
+                
+                // ソート（searchHits降順）
+                const sortByHits = (arr) => [...arr].sort((a, b) => b.searchHits - a.searchHits);
+                
+                const accent = cat === "エクオール" ? "#534AB7" : "#0F6E56";
+                const typeColors = {
+                  成分: "#0F6E56", 規格: "#185FA5", 訴求: "#C2541F", 信頼: "#534AB7", 実績: "#993556", 対象: "#7A5A1E", ブランド: "#5F5E5A"
+                };
+                
+                return (
+                  <div key={cat} style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 15, fontWeight: 500 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: accent }} />
+                      {cat}
+                    </div>
+                    
+                    {/* 🟢 鉄板 */}
+                    {ironPlate.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: "#0F6E56", marginBottom: 6 }}>🟢 鉄板（検索も多く上位も使う）</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {sortByHits(ironPlate).map(t => (
+                            <div key={t.word} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, padding: "4px 8px", background: "#E9F6F1", borderRadius: 6 }}>
+                              <span style={{ flex: 1, fontWeight: 500 }}>{t.word}</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>タイトル {t.titleHits}/7</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>検索 {t.searchHits}件</span>
+                              <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: typeColors[t.type] || "#EFEDE8", color: "#fff" }}>{t.type}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 🟡 チャンス */}
+                    {chance.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: "#F5A623", marginBottom: 6 }}>🟡 チャンス（検索されてるのに上位タイトルが手薄）</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {sortByHits(chance).map(t => (
+                            <div key={t.word} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, padding: "4px 8px", background: "#FFF4E5", borderRadius: 6 }}>
+                              <span style={{ flex: 1, fontWeight: 500 }}>{t.word}</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>タイトル {t.titleHits}/7</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>検索 {t.searchHits}件</span>
+                              <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: typeColors[t.type] || "#EFEDE8", color: "#fff" }}>{t.type}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 🔵 信頼の定番 */}
+                    {trust.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: "#185FA5", marginBottom: 6 }}>🔵 信頼の定番（上位が必ず入れる信頼ワード）</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {sortByHits(trust).map(t => (
+                            <div key={t.word} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, padding: "4px 8px", background: "#E2EEFA", borderRadius: 6 }}>
+                              <span style={{ flex: 1, fontWeight: 500 }}>{t.word}</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>タイトル {t.titleHits}/7</span>
+                              <span style={{ fontSize: 11, color: "#888780" }}>検索 {t.searchHits}件</span>
+                              <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#185FA5", color: "#fff" }}>{t.type}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 該当なし */}
+                    {ironPlate.length === 0 && chance.length === 0 && trust.length === 0 && (
+                      <div style={{ padding: 12, fontSize: 12, color: "#888780", textAlign: "center" }}>
+                        該当するリコメンドはありません
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
             <p style={{ fontSize: 13, color: "#5F5E5A", margin: 0, maxWidth: 620, lineHeight: 1.6 }}>
               楽天の検索上位・ランキング掲載の<strong>実在する上位商品タイトル</strong>から、各カテゴリで繰り返し使われている語を抽出しました。
               数値は<strong>検索ボリュームではなく</strong>「上位商品が実際にタイトルへ入れている＝有効と判断している語」の出現数（{"／"}サンプル商品数）です。商品名・説明文への採用候補にどうぞ。
@@ -1232,20 +1326,8 @@ export default function SupplementTracker() {
         </>
       )}
 
-      {mode === "bestsellers" && (
+        {mode === "bestsellers" && (
         <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              {["エクオール", "カリウム"].map((c) => (
-                <button key={c} onClick={() => setBsCat(c)} style={{ ...tab(bsCat === c, "#7955D4", "#F3E5FF", "#4B2482") }}>{c}</button>
-              ))}
-            </div>
-            <div style={{ marginLeft: "auto" }}>
-              <button onClick={fetchBestsellersAll} disabled={fetching} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 14, fontWeight: 500, color: "#fff", background: "#7955D4", border: "none", borderRadius: 8, cursor: fetching ? "default" : "pointer" }}>
-                <Trophy size={15} /> {fetching ? "取得中..." : "売れ筋を取得して記録"}
-              </button>
-            </div>
-          </div>
 
           {(() => {
             const bs = data.bestsellers?.[bsCat];
