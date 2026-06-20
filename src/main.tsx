@@ -194,13 +194,79 @@ function App() {
     }
   };
 
+  // Kliv Functions SDKの動的インポート
+  let functions: any = null;
+  
+  const loadStateFromDB = async (key: string): Promise<{ value: string | null } | null> => {
+    try {
+      const response = await fetch(`/api/v2/function/app-state-api?key=${encodeURIComponent(key)}`, {
+        method: "GET",
+        credentials: "include"
+      });
+      
+      if (!response.ok) {
+        console.warn("DB取得失敗:", response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      
+      if (data.value !== undefined) {
+        // まず非圧縮としてJSON.parseを試みる（後方互換）
+        try {
+          const parsed = JSON.parse(data.value);
+          return { value: data.value }; // 非圧縮データ
+        } catch {
+          // JSON parse失敗 → 圧縮データとして解凍
+          try {
+            const decompressed = await decompressFromBase64(data.value);
+            return { value: decompressed };
+          } catch (decompressErr) {
+            console.error("解凍失敗:", decompressErr);
+            return { value: null };
+          }
+        }
+      } else {
+        return { value: null };
+      }
+    } catch (e: any) {
+      console.error("DB取得例外:", e);
+      return null;
+    }
+  };
+  
   const migrateToDB = async (data: string) => {
-    const result = await saveStateToDB("rakuten-supp-tracker-v3", data);
-    if (result.ok) {
+    try {
+      console.log("migrateToDB 開始");
+      const compressed = await compressToBase64(data);
+      console.log("圧縮完了:", compressed.length);
+      
+      const requestBody = { 
+        key: "rakuten-supp-tracker-v3", 
+        value: compressed 
+      };
+      console.log("リクエストボディ:", requestBody);
+      
+      const response = await fetch("/api/v2/function/app-state-api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(requestBody)
+      });
+      
+      console.log("レスポンスステータス:", response.status);
+      const responseText = await response.text();
+      console.log("レスポンステキスト:", responseText);
+      
+      if (!response.ok) {
+        console.error("自動移行失敗:", response.status, responseText);
+        return false;
+      }
+      
       console.log("自動移行成功（圧縮済み）");
       return true;
-    } else {
-      console.error("自動移行失敗:", result.status);
+    } catch (e: any) {
+      console.error("自動移行失敗:", e.status || e.message, e);
       return false;
     }
   };
@@ -212,6 +278,19 @@ function App() {
       console.log("サインイン成功");
       const u = await auth.getUser();
       console.log("ユーザー取得:", u);
+      
+      // ログイン成功後にlocalStorage→DBへ自動移行（状態更新の前）
+      const localData = localStorage.getItem("rakuten-supp-tracker-v3");
+      if (localData) {
+        console.log("ローカルデータをDBへ移行開始...");
+        const migrated = await migrateToDB(localData);
+        if (migrated) {
+          console.log("✅ ローカルデータのDB移行成功");
+        } else {
+          console.warn("⚠️ ローカルデータのDB移行失敗");
+        }
+      }
+      
       setUser(u);
       setSyncStatus("cloud");
     } catch (e) {
@@ -232,10 +311,6 @@ function App() {
       async get(key: string) {
         if (user) {
           try {
-            // 認証ヘッダーを追加
-            const headers: Record<string, string> = {};
-            if (user.uuid) headers["x-user-uuid"] = user.uuid;
-            
             const result = await loadStateFromDB(key);
             if (result) {
               return result;

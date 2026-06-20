@@ -34,26 +34,14 @@ async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean;
   try {
     const compressed = await compressToBase64Impl(value);
     
-    // 認証ヘッダーを追加
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    
-    if (auth) {
-      try {
-        const user = await auth.getUser();
-        if (user) {
-          headers["x-user-uuid"] = user.uuid || "";
-        }
-      } catch (e) {
-        console.warn("ユーザー情報取得エラー:", e);
-      }
-    }
-    
-    const res = await fetch("/api/state", {
+    const response = await fetch("/api/v2/function/app-state-api", {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ key, value: compressed })
     });
-    return { ok: res.ok, status: res.status };
+    
+    return { ok: response.ok, status: response.status };
   } catch (e: any) {
     console.error("DB保存例外:", e);
     return { ok: false, status: 0 };
@@ -62,26 +50,18 @@ async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean;
 
 async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
   try {
-    const headers: Record<string, string> = {};
+    const response = await fetch(`/api/v2/function/app-state-api?key=${encodeURIComponent(key)}`, {
+      method: "GET",
+      credentials: "include"
+    });
     
-    if (auth) {
-      try {
-        const user = await auth.getUser();
-        if (user) {
-          headers["x-user-uuid"] = user.uuid || "";
-        }
-      } catch (e) {
-        console.warn("ユーザー情報取得エラー:", e);
-      }
-    }
-    
-    const res = await fetch(`/api/state?key=${key}`, { headers });
-    if (!res.ok) {
-      console.warn("DB取得失敗:", res.status);
+    if (!response.ok) {
+      console.warn("DB取得失敗:", response.status);
       return null;
     }
-    const data = await res.json();
-    if (!data.value) return { value: null };
+    
+    const data = await response.json();
+    if (data.value === undefined) return { value: null };
     
     // まず非圧縮としてJSON.parseを試みる（後方互換）
     try {
@@ -462,6 +442,13 @@ export default function SupplementTracker() {
       setLoaded(true);
     })();
   }, []);
+
+  // データが変更されたときに自動的に保存
+  useEffect(() => {
+    if (loaded) {
+      persist(data);
+    }
+  }, [data, loaded]);
 
   useEffect(() => {
     if (data.sites?.length && !data.sites.find((s) => s.id === selectedSite)) {
