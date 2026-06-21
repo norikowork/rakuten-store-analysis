@@ -34,13 +34,9 @@ async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean;
   try {
     const compressed = await compressToBase64Impl(value);
     
-    // fetchを使用（Headersオブジェクトを明示的に作成）
-    const headers = new Headers();
-    headers.append("Content-Type", "application/json");
-    
     const response = await fetch("/api/v2/function/app-state-api", {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ key, value: compressed })
     });
@@ -54,12 +50,8 @@ async function saveStateToDB(key: string, value: string): Promise<{ ok: boolean;
 
 async function loadStateFromDB(key: string): Promise<{ value: string | null } | null> {
   try {
-    // fetchを使用（Headersオブジェクトを明示的に作成）
-    const headers = new Headers();
-    
     const response = await fetch(`/api/v2/function/app-state-api?key=${encodeURIComponent(key)}`, {
       method: "GET",
-      headers,
       credentials: "include"
     });
     
