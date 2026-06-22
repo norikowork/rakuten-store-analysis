@@ -320,14 +320,47 @@ async function loadData() {
   } catch (e) {}
   return null;
 }
-async function persist(data) {
+
+// 認証状態を確認するヘルパー
+async function isAuthenticated() {
   try {
-    if (typeof window !== "undefined" && window.storage) {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(data));
-      return true;
+    if (typeof window !== "undefined" && auth) {
+      const user = await auth.getUser();
+      return !!user;
     }
   } catch (e) {}
   return false;
+}
+
+async function persist(data) {
+  // まず localStorage に保存（必ず実行）
+  let localOk = false;
+  try {
+    if (typeof window !== "undefined" && window.storage) {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(data));
+      localOk = true;
+    }
+  } catch (e) {
+    console.error("localStorage保存エラー:", e);
+  }
+
+  // ログイン中の場合はクラウドDBにも保存
+  const loggedIn = await isAuthenticated();
+  if (loggedIn && localOk) {
+    try {
+      const jsonStr = JSON.stringify(data);
+      const result = await saveStateToDB(STORAGE_KEY, jsonStr);
+      if (result.ok) {
+        console.log("✅ クラウドに保存しました");
+      } else {
+        console.warn("🟠 クラウド保存失敗:", result.status);
+      }
+    } catch (e) {
+      console.error("クラウド保存エラー:", e);
+    }
+  }
+
+  return localOk;
 }
 
 const border = "0.5px solid rgba(120,120,120,0.2)";
@@ -470,12 +503,16 @@ export default function SupplementTracker() {
   const commit = useCallback(async (next, msg) => {
     try {
       setData(next);
-      // ローカル保存のみ（DB保存は削除）
+      // persist関数が localStorage とクラウドDBの両方に保存
       const ok = await persist(next);
-      flash(ok ? (msg || "保存しました") : "メモリに保存（このタブのみ）");
+      if (ok) {
+        flash(msg || "保存しました");
+      } else {
+        flash("🟠 メモリに保存（このタブのみ）");
+      }
     } catch (e) {
       console.error("保存エラー:", e);
-      flash("保存に失敗しました");
+      flash("🟠 保存に失敗しました");
     }
   }, []);
 
