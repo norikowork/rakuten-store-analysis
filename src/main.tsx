@@ -330,14 +330,37 @@ function App() {
         }
       },
       async set(key: string, value: string) {
-        // localStorageのみ（DB保存機能は削除）
+        // まず localStorage に保存（必ず実行）
+        let localOk = false;
         try {
           localStorage.setItem(key, value);
-          return true;
+          localOk = true;
         } catch (e) {
           console.error("localStorage保存エラー:", e);
-          return false;
         }
+        
+        // ログイン中の場合はクラウドDBにも保存
+        if (user && localOk) {
+          try {
+            const compressed = await compressToBase64(value);
+            const response = await fetch("/api/v2/function/app-state-api", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ key, value: compressed })
+            });
+            
+            if (response.ok) {
+              console.log("✅ クラウドに保存しました");
+            } else {
+              console.warn("🟠 クラウド保存失敗:", response.status);
+            }
+          } catch (e) {
+            console.error("クラウド保存エラー:", e);
+          }
+        }
+        
+        return localOk;
       }
     };
   }

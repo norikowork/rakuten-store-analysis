@@ -83,6 +83,19 @@ async function loadStateFromDB(key: string): Promise<{ value: string | null } | 
   }
 }
 
+// 認証状態を確認するヘルパー
+async function isAuthenticated(): Promise<boolean> {
+  try {
+    if (typeof window !== "undefined" && auth) {
+      const user = await auth.getUser();
+      return !!user;
+    }
+  } catch (e) {
+    console.error("認証チェックエラー:", e);
+  }
+  return false;
+}
+
 const STORAGE_KEY = "rakuten-supp-tracker-v3";
 
 // ---- 楽天市場 商品検索API（RMS OpenAPI版）----
@@ -321,17 +334,6 @@ async function loadData() {
   return null;
 }
 
-// 認証状態を確認するヘルパー
-async function isAuthenticated() {
-  try {
-    if (typeof window !== "undefined" && auth) {
-      const user = await auth.getUser();
-      return !!user;
-    }
-  } catch (e) {}
-  return false;
-}
-
 async function persist(data) {
   // まず localStorage に保存（必ず実行）
   let localOk = false;
@@ -384,6 +386,10 @@ export default function SupplementTracker() {
   const [skPage, setSkPage] = useState(1);
   const [bsCat, setBsCat] = useState("エクオール");
   const SK_PER_PAGE = 100;
+  
+  // クラウド保存用
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
 
   // 楽天API取得まわり
   const [appId, setAppId] = useState("");
@@ -499,6 +505,55 @@ export default function SupplementTracker() {
   }, [entryDate, data]);
 
   const flash = (msg) => { setSaved(msg); setTimeout(() => setSaved(""), 2200); };
+
+  const saveToCloud = async () => {
+    try {
+      // 認証チェック
+      const loggedIn = await isAuthenticated();
+      if (!loggedIn) {
+        setSaveStatus("ログインしてください");
+        setTimeout(() => setSaveStatus(""), 3000);
+        return;
+      }
+
+      setSaving(true);
+      setSaveStatus("");
+
+      // 全データをJSON文字列化
+      const jsonStr = JSON.stringify(data);
+      console.log("クラウド保存開始、データサイズ:", jsonStr.length);
+
+      // main.tsx の migrateToDB と同じ方法で保存
+      const compressed = await compressToBase64Impl(jsonStr);
+      console.log("圧縮完了:", compressed.length);
+
+      const response = await fetch("/api/v2/function/app-state-api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ 
+          key: "rakuten-supp-tracker-v3", 
+          value: compressed 
+        })
+      });
+
+      console.log("クラウド保存レスポンス:", response.status);
+
+      if (response.ok) {
+        setSaveStatus("🟢 クラウドに保存しました");
+        console.log("✅ クラウドに保存しました");
+      } else {
+        setSaveStatus(`🟠 クラウド保存に失敗（HTTP ${response.status}）`);
+        console.warn(`🟠 クラウド保存失敗: HTTP ${response.status}`);
+      }
+    } catch (error: any) {
+      console.error("クラウド保存エラー:", error);
+      setSaveStatus("🟠 クラウド保存に失敗（ネットワークエラー）");
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveStatus(""), 5000);
+    }
+  };
 
   const commit = useCallback(async (next, msg) => {
     try {
@@ -1518,6 +1573,14 @@ export default function SupplementTracker() {
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "#888780", marginTop: 18 }}>
         <button onClick={exportJson} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Download size={14} /> データを書き出す</button>
         <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer", color: "#444441" }}><Upload size={14} /> 読み込む<input type="file" accept="application/json" onChange={importJson} style={{ display: "none" }} /></label>
+        <button onClick={saveToCloud} disabled={saving} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "none", border: saving ? "0.5px solid #F5A623" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: saving ? "default" : "pointer", color: saving ? "#F5A623" : "#444441" }}>
+          <Save size={14} /> クラウドに保存
+        </button>
+        {saveStatus && (
+          <span style={{ fontSize: 12, color: saveStatus.includes("🟢") ? "#0F6E56" : saveStatus.includes("🟠") ? "#F5A623" : "#888780" }}>
+            {saveStatus}
+          </span>
+        )}
       </div>
     </div>
   );
