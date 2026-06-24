@@ -305,7 +305,7 @@ const SEED = {
   ],
   backlinks: {},
   keywords: KEYWORDS,
-  searchKeywords: { "エクオール": [], "カリウム": [] },
+  searchKeywords: { "エクオール": [], "カリウム": [], "とこわか": [] },
   bestsellers: { "エクオール": { history: {} }, "カリウム": { history: {} } },
 };
 
@@ -328,7 +328,16 @@ async function loadData() {
   try {
     if (typeof window !== "undefined" && window.storage) {
       const r = await window.storage.get(STORAGE_KEY);
-      if (r && r.value) return JSON.parse(r.value);
+      if (r && r.value) {
+        const parsed = JSON.parse(r.value);
+        // searchKeywords に「とこわか」がない場合は補完（既存データ保持）
+        if (parsed.searchKeywords) {
+          if (!parsed.searchKeywords["とこわか"]) {
+            parsed.searchKeywords["とこわか"] = [];
+          }
+        }
+        return parsed;
+      }
     }
   } catch (e) {}
   return null;
@@ -474,7 +483,7 @@ export default function SupplementTracker() {
           sites: d.sites || SEED.sites,
           backlinks: d.backlinks || {},
           keywords: d.keywords || SEED.keywords,
-          searchKeywords: (d.searchKeywords && !Array.isArray(d.searchKeywords)) ? d.searchKeywords : { "エクオール": [], "カリウム": [] },
+          searchKeywords: (d.searchKeywords && !Array.isArray(d.searchKeywords)) ? { ...d.searchKeywords, "とこわか": d.searchKeywords["とこわか"] || [] } : { "エクオール": [], "カリウム": [], "とこわか": [] },
           bestsellers: d.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } },
         });
       }
@@ -749,7 +758,7 @@ export default function SupplementTracker() {
             sites: p.sites || SEED.sites, 
             backlinks: p.backlinks || {}, 
             keywords: p.keywords || SEED.keywords, 
-            searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [] }, 
+            searchKeywords: p.searchKeywords || { "エクオール": [], "カリウム": [], "とこわか": [] }, 
             bestsellers: p.bestsellers || { "エクオール": { history: {} }, "カリウム": { history: {} } } 
           }, "読み込みしました");
           
@@ -1510,6 +1519,7 @@ export default function SupplementTracker() {
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <button onClick={() => setSkCat("エクオール")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: skCat === "エクオール" ? "#fff" : "#444441", background: skCat === "エクオール" ? "#534AB7" : "none", border: skCat === "エクオール" ? "none" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer" }}>エクオール</button>
               <button onClick={() => setSkCat("カリウム")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: skCat === "カリウム" ? "#fff" : "#444441", background: skCat === "カリウム" ? "#0F6E56" : "none", border: skCat === "カリウム" ? "none" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer" }}>カリウム</button>
+              <button onClick={() => setSkCat("とこわか")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, color: skCat === "とこわか" ? "#fff" : "#444441", background: skCat === "とこわか" ? "#D85A30" : "none", border: skCat === "とこわか" ? "none" : "0.5px solid rgba(120,120,120,0.3)", borderRadius: 8, cursor: "pointer" }}>とこわか</button>
             </div>
             <textarea 
               value={skInput} 
@@ -1532,7 +1542,7 @@ export default function SupplementTracker() {
             </div>
           </div>
 
-          {data.searchKeywords && Object.keys(data.searchKeywords).length > 0 && (data.searchKeywords["エクオール"]?.length > 0 || data.searchKeywords["カリウム"]?.length > 0) ? (
+          {data.searchKeywords && Object.keys(data.searchKeywords).length > 0 && (data.searchKeywords["エクオール"]?.length > 0 || data.searchKeywords["カリウム"]?.length > 0 || data.searchKeywords["とこわか"]?.length > 0) ? (
             <div style={{ background: "#fff", border, borderRadius: 12, padding: 16, marginBottom: 18 }}>
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>
                 {skCat} 検索キーワードランキング（インポート回数順）
