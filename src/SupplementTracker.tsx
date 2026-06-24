@@ -664,10 +664,16 @@ export default function SupplementTracker() {
       const vol = m[1] != null ? Number(String(m[1]).replace(/[^0-9]/g, "")) : NaN;
       const ex = map.get(word);
       if (ex) {
-        ex.count = (ex.count || 1) + 1;
+        // 数値が指定されている場合はcountをその数値に設定、そうでなければ+1
+        if (Number.isFinite(vol)) {
+          ex.count = vol;
+        } else {
+          ex.count = (ex.count || 1) + 1;
+        }
         if (Number.isFinite(vol)) ex.volume = vol;
       } else {
-        map.set(word, { word, count: 1, volume: Number.isFinite(vol) ? vol : null });
+        // 新規追加時は数値が指定されていればその数値、そうでなければ1
+        map.set(word, { word, count: Number.isFinite(vol) ? vol : 1, volume: Number.isFinite(vol) ? vol : null });
       }
     }
     const next = [...map.values()].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.volume || 0) - (a.volume || 0));
