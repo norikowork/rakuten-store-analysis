@@ -1417,8 +1417,29 @@ export default function SupplementTracker() {
 
             return (
               <div style={{ background: "#fff", border, borderRadius: 12, padding: "16px 12px 8px", marginBottom: 22 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px 8px", fontSize: 13, color: "#5F5E5A", marginBottom: 12 }}>
-                  <Trophy size={15} /> {bsCat} 売れ筋ランキング（Top15）
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px", fontSize: 13, color: "#5F5E5A" }}>
+                    <Trophy size={15} /> {bsCat} 売れ筋ランキング（Top15）
+                  </div>
+                  <button 
+                    onClick={fetchBestsellersAll}
+                    disabled={fetching}
+                    style={{ 
+                      display: "flex", 
+                      alignItems: "center", 
+                      gap: 6, 
+                      padding: "7px 12px", 
+                      fontSize: 13, 
+                      background: fetching ? "#F5A623" : "none", 
+                      border: "0.5px solid rgba(120,120,120,0.3)", 
+                      borderRadius: 8, 
+                      cursor: fetching ? "default" : "pointer", 
+                      color: fetching ? "#fff" : "#444441" 
+                    }}
+                  >
+                    <RefreshCw size={14} style={{ animation: fetching ? "spin 1s linear infinite" : "none" }} />
+                    {fetching ? "取得中…" : "売れ筋を取得して記録"}
+                  </button>
                 </div>
                 {latest.length > 0 ? (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
